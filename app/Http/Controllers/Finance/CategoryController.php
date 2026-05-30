@@ -1,0 +1,182 @@
+<?php
+
+namespace App\Http\Controllers\Finance;
+
+use App\Http\Controllers\Controller;
+use Illuminate\Http\Request;
+use Yajra\DataTables\Facades\DataTables;
+use Rap2hpoutre\FastExcel\FastExcel;
+use App\Models\Finance\Category;
+use App\Http\Requests\Finance\CategoryRequest;
+use Validator;
+
+class CategoryController extends Controller
+{
+    protected $viewPath = 'finance.category';
+    private $route = 'finance.category';
+    private $objectModel = Category::class;
+
+    public function __construct()
+    {
+        
+    }
+
+    public function index(Request $request)
+    {
+
+        if ($request->ajax()) {
+            $data = $this->objectModel::query();
+            $data = $data->orderBy('sort', 'ASC');
+
+            // Apply filters
+            if (!empty($request->search) || !empty($request->fsearch)) {
+                $search = $request->search ?? $request->fsearch;
+                $data->search($search);
+            }
+
+            if (!empty($request->maincategory)) {
+                $data->mainCategories();
+            }
+
+            if (!empty($request->is_active)) {
+                if ($request->is_active == 'true') {
+                   $data->active(); 
+                } else {
+                    $data->notActive();
+                }
+            }
+
+            return Datatables::of($data)
+                ->addIndexColumn()
+                ->addColumn('checkbox', function ($row) {
+                    $checkbox = '<div class="form-check form-check-sm form-check-custom form-check-solid">
+                                    <input class="form-check-input" type="checkbox" value="' . $row->id . '" />
+                                </div>';
+                    return $checkbox;
+                })
+                ->addColumn('parent', function ($row) {
+                    $parent = $row->parent->name ?? '---';
+                    return $parent;
+                })
+                ->addColumn('action', function ($row) {
+                    $btn = '<a href="javascript:;" onclick="edit_item(' . $row->id . ')" class="btn btn-xs btn-icon btn-primary me-2"><i class="bi bi-pencil-square fs-4"></i></a>';
+                    return $btn;
+                })
+                ->rawColumns(['parent', 'action', 'checkbox'])
+                ->make(true);
+
+        }
+        return view($this->viewPath . '.index');
+    }
+
+    // For export with filters
+    public function export(Request $request)
+    {
+
+        $data = $this->objectModel::query();
+
+        if (!empty($request->search) || !empty($request->fsearch)) {
+            $search = $request->search ?? $request->fsearch;
+            $data->search($search);
+        }
+
+        if (!empty($request->maincategory)) {
+            $data->mainCategories();
+        }
+
+        if (!empty($request->is_active)) {
+            if ($request->is_active == 'true') {
+                $data->active(); 
+            } else {
+                $data->notActive();
+            }
+        }
+
+        $data = $data->get();
+
+        return (new FastExcel($data))->download('file.csv');
+
+    }
+
+    public function show($id)
+    {
+        $data = $this->objectModel::find($id);
+        return view($this->viewPath . '.show', compact('data'));
+    }
+
+    public function create()
+    {
+        return view($this->viewPath . '.create');
+    }
+
+    public function store(CategoryRequest $request)
+    {
+        $data = $request->validated();
+        $result = $this->objectModel::create($data);
+
+        if ($request->hasFile('image') && $request->file('image')->isValid()) {
+            $result->clearMediaCollection('image');
+            $result->addMediaFromRequest('image')->toMediaCollection('image');
+        }
+
+        return redirect(route($this->route . '.index'))->with('message', 'تم الاضافة بنجاح')->with('status', 'success');
+    }
+
+    public function edit($id)
+    {
+        $data = $this->objectModel::find($id);
+        return view($this->viewPath . '.form', compact('data'));
+    }
+
+    public function update(CategoryRequest $request)
+    {
+
+        $data = $request->validated();
+
+        $result = $this->objectModel::whereId($request->id)->first();
+
+        $result->update($data);
+
+        if ($request->hasFile('image') && $request->file('image')->isValid()) {
+            $result->clearMediaCollection('image');
+            $result->addMediaFromRequest('image')->toMediaCollection('image');
+        }
+
+        return redirect(route($this->route . '.index'))->with('message', 'تم التعديل بنجاح')->with('status', 'success');
+    }
+
+    public function destroy(Request $request)
+    {
+
+        try {
+            if ($this->objectModel->products()->exists()) {
+                return redirect()->back()->with('error', 'Cannot delete category with products.');
+            }
+
+            $this->objectModel::whereIn('id', $request->id)->delete();
+
+        } catch (\Exception $e) {
+            return response()->json(['message' => 'error']);
+        }
+        return response()->json(['message' => 'success']);
+    }
+
+    public function ajaxSearch(Request $request)
+    {
+        $search = $request->search;
+
+        $categories = Category::query()
+            ->select('id', 'name')
+            ->when($search, fn($q) => $q->where('name', 'like', "%{$search}%"))
+            ->orderBy('name')
+            ->paginate(20);
+
+        return response()->json([
+            'results' => $categories->map(fn($c) => [
+                'id'   => $c->id,
+                'text' => $c->name,
+            ]),
+            'pagination' => ['more' => $categories->hasMorePages()],
+        ]);
+    }
+}

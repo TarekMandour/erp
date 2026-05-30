@@ -1,0 +1,27 @@
+<?php 
+
+return [
+    "add_new" => "Add new",
+    "edit" => "Edit",
+    "type" => "Type",
+    "choose" => "Choose ...",
+    "Degree" => "Degrees",
+    "name" => "Name",
+    "title" => "Title",
+    "action" => "Action",
+    "gallery" => "Gallery",
+    "video" => "Video",
+    "file" => "Video",
+    "created_at" => "Created date",
+    "from" => "From date",
+    "to" => "To date",
+    "photo" => "Photo",
+    "photo_type" => "Allowed file types:",
+    "subject" => "subject",
+    "search" => "Search",
+    "description" => "Description",
+    "choose" => "Choose ...",
+    "close" => "Close",
+    "save" => "Save",
+    "filter" => "Search filter",
+];

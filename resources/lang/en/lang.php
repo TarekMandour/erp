@@ -1,0 +1,51 @@
+<?php 
+
+return [
+    "mode" => "Mode",
+    "light" => "Light",
+    "dark" => "Dark",
+    "system" => "System",
+    "lang" => "Language",
+    "english" => "English",
+    "arabic" => "Arabic",
+    
+    ###########   Dashboard Lang   ###########
+
+    "dashboard" => "Dashboard",
+    "classrooms" => "Classrooms",
+    "events" => "Events",
+    "walls" => "Honor Board",
+    "Subjects" => "Subjects",
+    "subject_units" => "Subject Units",
+    "units" => "Units",
+    "questions" => "Questions",
+    "exams" => "Exams",
+    "custom_videos" => "Custom Videos",
+    "notifications" => "Notifications",
+    "pages" => "Pages",
+    "educational_levels" => "Educational Levels",
+    "Student" => "Student",
+    "Students" => "Students",
+    "accounts" => "Accounts",
+    "administrators" => "Administrators",
+    "settings" => "Settings",
+    "media" => "Media",
+    "map" => "Map",
+    "social" => "Social media",
+    "seo" => "Seo",
+    "keywords" => "seo",
+    "project_name_ar" => "Project name ar",
+    "project_name_en" => "Project name en",
+    "email" => "Email",
+    "email2" => "Email 2",
+    "phone" => "Phone",
+    "phone2" => "Phone 2",
+    "whatsapp" => "Whatsapp",
+    "address" => "Address",
+    "address2" => "Address 2",
+    "location_on_map" => "Location on map",
+    "logo" => "Logo",
+    "logo_dark" => "Logo dark",
+    
+    ###########   API Lang   ###########
+];

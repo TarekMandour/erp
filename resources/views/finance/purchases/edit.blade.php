@@ -1,0 +1,28 @@
+@extends('admin.layout.master')
+@php $route = 'finance.purchases'; @endphp
+@section('css')
+<link href="{{asset('dash/assets/plugins/custom/datatables/datatables.bundle.rtl.css')}}" rel="stylesheet" type="text/css" />
+@endsection
+@section('breadcrumb')
+<div class="toolbar mb-5 mb-lg-7" id="kt_toolbar">
+    <div class="page-title d-flex flex-column me-3">
+        <h1 class="d-flex text-gray-900 fw-bold my-1 fs-3">تعديل فاتورة شراء</h1>
+        <ul class="breadcrumb breadcrumb-dot fw-semibold text-gray-600 fs-6 my-1">
+            <li class="breadcrumb-item text-gray-600"><a href="{{route('admin.dashboard')}}" class="text-gray-600 text-hover-primary">الرئيسية</a></li>
+            <li class="breadcrumb-item text-gray-600"><a href="{{route($route.'.index')}}" class="text-gray-600 text-hover-primary">المشتريات</a></li>
+            <li class="breadcrumb-item text-gray-600">تعديل: {{$data->purchase_number}}</li>
+        </ul>
+    </div>
+</div>
+@endsection
+@section('content')
+<div class="content flex-column-fluid" id="kt_content">
+    <form method="POST" action="{{route($route.'.update')}}">
+        @csrf
+        <input type="hidden" name="id" value="{{$data->id}}">
+        <input type="hidden" name="purchase_number" value="{{$data->purchase_number}}">
+        @include('finance.purchases.form')
+    </form>
+</div>
+@endsection
+@include('finance.purchases._purchases_js')

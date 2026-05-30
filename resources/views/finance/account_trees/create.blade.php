@@ -1,0 +1,30 @@
+@extends('admin.layout.master')
+
+@php
+    $route = 'finance.account_trees';
+    $viewPath = 'finance.account_trees';
+@endphp
+
+@section('breadcrumb')
+<div class="toolbar mb-5 mb-lg-7" id="kt_toolbar">
+    <div class="page-title d-flex flex-column me-3">
+        <h1 class="d-flex text-gray-900 fw-bold my-1 fs-3">شجرة الحسابات</h1>
+        <ul class="breadcrumb breadcrumb-dot fw-semibold text-gray-600 fs-6 my-1">
+            <li class="breadcrumb-item text-gray-600">
+                <a href="{{route('admin.dashboard')}}" class="text-gray-600 text-hover-primary">الرئيسية</a>
+            </li>
+            <li class="breadcrumb-item text-gray-600">
+                <a href="{{route($route.'.index')}}" class="text-gray-600 text-hover-primary">شجرة الحسابات</a>
+            </li>
+            <li class="breadcrumb-item text-gray-600">اضف جديد</li>
+        </ul>
+    </div>
+</div>
+@endsection
+
+@section('content')
+<form action="{{route($route.'.store')}}" method="POST" enctype="multipart/form-data" id="kt_account_profile_details_form" class="form d-flex flex-column flex-lg-row">
+    @csrf
+    @include($viewPath.'.form')
+</form>
+@endsection
