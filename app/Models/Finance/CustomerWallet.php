@@ -12,6 +12,7 @@ class CustomerWallet extends Model
     protected $fillable = [
         'customer_id',
         'voucher_id',
+        'order_id',
         'date',
         'description',
         'debit',

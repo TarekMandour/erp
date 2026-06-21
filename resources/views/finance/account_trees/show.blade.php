@@ -173,27 +173,35 @@
                     <thead>
                         <tr class="text-start text-muted fw-bold fs-7 text-uppercase">
                             <th>#</th>
+                            <th>رقم القيد</th>
                             <th>المدين</th>
                             <th>الدائن</th>
-                            <th>المرجع</th>
                             <th>الوصف</th>
                             <th>التاريخ</th>
                             <th></th>
                         </tr>
                     </thead>
                     <tbody>
-                        @forelse($data->transactions()->latest()->take(20)->get() as $i => $trans)
+                        @forelse($data->transactions()->with('entry')->orderByDesc('id')->take(20)->get() as $i => $trans)
                         <tr>
                             <td>{{$i + 1}}</td>
+                            <td class="fw-semibold text-primary">
+                                @if($trans->entry)
+                                    <a href="{{route('finance.journal_entries.show', $trans->journal_entry_id)}}">
+                                        {{$trans->entry->entry_number}}
+                                    </a>
+                                @else
+                                    —
+                                @endif
+                            </td>
                             <td class="fw-bold text-danger">{{$trans->debit > 0 ? number_format($trans->debit, 2) : '—'}}</td>
                             <td class="fw-bold text-success">{{$trans->credit > 0 ? number_format($trans->credit, 2) : '—'}}</td>
-                            <td class="text-muted">
-                                {{$trans->reference_type ? $trans->reference_type . ($trans->reference_id ? ' #'.$trans->reference_id : '') : '—'}}
-                            </td>
-                            <td>{{$trans->description ?? '—'}}</td>
-                            <td class="text-muted">{{$trans->created_at->format('Y-m-d')}}</td>
+                            <td class="text-muted">{{$trans->description ?? ($trans->entry?->description ?? '—')}}</td>
+                            <td class="text-muted">{{$trans->entry?->date?->format('Y-m-d') ?? '—'}}</td>
                             <td>
-                                <a href="{{route('finance.trans_account_trees.show', $trans->id)}}" class="btn btn-xs btn-icon btn-info"><i class="bi bi-eye fs-5"></i></a>
+                                @if($trans->entry)
+                                <a href="{{route('finance.journal_entries.show', $trans->journal_entry_id)}}" class="btn btn-xs btn-icon btn-info"><i class="bi bi-eye fs-5"></i></a>
+                                @endif
                             </td>
                         </tr>
                         @empty

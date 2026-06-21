@@ -104,11 +104,15 @@ class ProductsController extends Controller
                     return $price;
                 })
                 ->addColumn('stock', function ($row) {
-                    $totalStock = 0;
-                    // foreach ($row->variants as $variant) {
-                    //     $totalStock += $variant->inventoryLots->sum('quantity');
-                    // }
-
+                    
+                    $totalStock = $row->variants->sum(function ($variant) use ($row) {
+                        if($row->has_variants) {
+                            return $variant->inventoryStocks->whereNotNull('variant_id')->sum('quantity');
+                        } else {
+                            return $variant->inventoryStocks->whereNull('variant_id')->sum('quantity');
+                        }
+                    });
+                    
                     if ($totalStock > 0) {
                         $stock = '<span class="badge bg-light-success">'.$totalStock.' '.($row->unit?->name ?? '--').'</span>';
                     } else {
@@ -218,8 +222,9 @@ class ProductsController extends Controller
             'brands' => Brand::where('is_active', true)->get(),
             'units' => Unit::get()
         ];
+        $pricingMode = \App\Helpers\Helper::pricingMode();
 
-        return view($this->viewPath . '.create', compact('filters'));
+        return view($this->viewPath . '.create', compact('filters', 'pricingMode'));
     }
 
     public function store(ProductRequest $request)
@@ -251,8 +256,9 @@ class ProductsController extends Controller
             'brands' => Brand::where('is_active', true)->get(),
             'units' => Unit::get()
         ];
+        $pricingMode = \App\Helpers\Helper::pricingMode();
 
-        return view($this->viewPath . '.edit', compact('data','filters'));
+        return view($this->viewPath . '.edit', compact('data','filters', 'pricingMode'));
     }
 
     public function update(ProductRequest $request)

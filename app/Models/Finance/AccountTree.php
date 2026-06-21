@@ -40,7 +40,7 @@ class AccountTree extends Model
 
     public function transactions()
     {
-        return $this->hasMany(TransAccountTree::class, 'account_id');
+        return $this->hasMany(JournalEntryItem::class, 'account_tree_id');
     }
 
     public function getTypeNameAttribute(): string

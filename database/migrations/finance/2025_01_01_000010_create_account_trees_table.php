@@ -14,6 +14,7 @@ return new class extends Migration
             $table->string('code')->unique();
             $table->foreignId('parent_id')->nullable()->constrained('account_trees')->nullOnDelete();
             $table->enum('type', ['asset', 'liability', 'equity', 'revenue', 'expense']);
+            $table->enum('account_type', ['debit', 'credit'])->default('debit');
             $table->integer('level')->default(0);
             $table->decimal('total_debit', 15, 2)->default(0);
             $table->decimal('total_credit', 15, 2)->default(0);

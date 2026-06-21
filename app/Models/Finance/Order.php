@@ -2,12 +2,13 @@
 
 namespace App\Models\Finance;
 
+use App\Traits\Finance\HasJournalEntry;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 
 class Order extends Model
 {
-    use HasFactory;
+    use HasFactory, HasJournalEntry;
 
     protected $fillable = [
         'order_number',
@@ -45,9 +46,13 @@ class Order extends Model
     ];
 
     public static array $paymentTypeLabels = [
-        'cash'   => 'نقدي',
-        'credit' => 'آجل',
-        'wallet' => 'محفظة',
+        'cash'         => 'نقدي',
+        'credit'       => 'آجل',
+        'installments' => 'أقساط',
+        'wallet'       => 'محفظة الكترونيه',
+        'bank_online'  => 'تحويل بنكي اونلاين',
+        'bank_direct'  => 'تحويل بنكي مباشر',
+        'check'        => 'شيك',
     ];
 
     public static array $statusLabels = [
@@ -122,5 +127,49 @@ class Order extends Model
         if (!$last) return 'SO-0001';
         $num = (int) substr($last, 3);
         return 'SO-' . str_pad($num + 1, 4, '0', STR_PAD_LEFT);
+    }
+
+    // =========================================================================
+    //  HasJournalEntry overrides
+    // =========================================================================
+
+    public function getScenarioCode(): string
+    {
+        return 'SALE_' . strtoupper($this->payment_type ?? 'CASH');
+    }
+
+    public function getFallbackScenarioCode(): string
+    {
+        return 'SALE_CASH';
+    }
+
+    public function getOperationType(): string
+    {
+        return 'order';
+    }
+
+    public function getEntryType(): string
+    {
+        return 'sales';
+    }
+
+    public function isReceiptType(): bool
+    {
+        return true;
+    }
+
+    public function getTransactionAmount(): float
+    {
+        return (float) ($this->total ?? 0);
+    }
+
+    public function getPaymentTypeLabel(): string
+    {
+        return static::$paymentTypeLabels[$this->payment_type] ?? ($this->payment_type ?? '');
+    }
+
+    public function getPostableDescription(): string
+    {
+        return "فاتورة مبيعات رقم {$this->order_number}";
     }
 }

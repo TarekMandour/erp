@@ -11,6 +11,7 @@ return new class extends Migration
         Schema::create('bank_accounts', function (Blueprint $table) {
             $table->id();
             $table->foreignId('bank_id')->constrained('banks')->cascadeOnDelete();
+            $table->foreignId('account_tree_id')->constrained('account_trees');
             $table->string('account_number');
             $table->string('currency')->default('SAR');
             $table->decimal('balance', 15, 2)->default(0);

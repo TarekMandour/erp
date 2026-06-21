@@ -51,7 +51,7 @@
                         @if($item)
                             <input type="text" class="form-control form-control-solid" value="{{$item->warehouse->name}}" readonly />
                         @else
-                            <select class="form-select form-select-solid" name="warehouse_id" id="warehouse_id">
+                            <select class="form-select form-select-solid" name="warehouse_id" id="warehouse_id" data-kt-select2="true" data-close-on-select="true" data-placeholder="اختر ..." data-allow-clear="false">
                                 <option value="">-- اختر المستودع --</option>
                                 @foreach($warehouses as $w)
                                 <option value="{{$w->id}}" {{old('warehouse_id') == $w->id ? 'selected' : ''}}>{{$w->name}}</option>
@@ -67,14 +67,8 @@
                         @if($item)
                             <input type="text" class="form-control form-control-solid" value="{{$item->product->name}}" readonly />
                         @else
-                            <select class="form-select form-select-solid" name="product_id" id="product_id">
-                                <option value="">-- اختر المنتج --</option>
-                                @foreach($products as $p)
-                                <option value="{{$p->id}}" data-has-variants="{{$p->has_variants ? '1' : '0'}}" {{old('product_id') == $p->id ? 'selected' : ''}}>
-                                    {{$p->name}} ({{$p->sku}})
-                                </option>
-                                @endforeach
-                            </select>
+                            <select class="form-select form-select-solid" name="product_id" id="product_id"
+                                    data-placeholder="ابحث عن منتج ..." data-allow-clear="false"></select>
                             @error('product_id')<div class="text-danger mt-1">{{$message}}</div>@enderror
                         @endif
                     </div>
@@ -87,7 +81,7 @@
                             <input type="text" class="form-control form-control-solid"
                                 value="{{ is_array($attrs) ? implode(' / ', array_values($attrs)) : $item->variant->sku }}" readonly />
                         @else
-                            <select class="form-select form-select-solid" name="variant_id" id="variant_id">
+                            <select class="form-select form-select-solid" name="variant_id" id="variant_id" data-kt-select2="true" data-close-on-select="true" data-placeholder="اختر ..." data-allow-clear="false">
                                 <option value="">-- اختر النوع --</option>
                             </select>
                             @error('variant_id')<div class="text-danger mt-1">{{$message}}</div>@enderror
@@ -99,7 +93,7 @@
                     {{-- Type --}}
                     <div class="col-md-3 fv-row">
                         <label class="form-label required">نوع العملية</label>
-                        <select class="form-select form-select-solid" name="type" id="type">
+                        <select class="form-select form-select-solid" name="type" id="type" data-kt-select2="true" data-close-on-select="true" data-placeholder="اختر ..." data-allow-clear="false">
                             <option value="in"         {{old('type') == 'in'         ? 'selected' : ''}}>وارد (إضافة)</option>
                             <option value="out"        {{old('type') == 'out'        ? 'selected' : ''}}>صادر (خصم)</option>
                             <option value="adjustment" {{old('type') == 'adjustment' ? 'selected' : ''}}>تعديل (تحديد الكمية)</option>
@@ -149,6 +143,23 @@ $(function () {
         $('#qty-label').text(labels[$(this).val()] || 'الكمية');
     });
 
+    // Init product Select2 with AJAX search
+    @unless($item)
+    $('#product_id').select2({
+        dir: 'rtl',
+        placeholder: 'ابحث عن منتج ...',
+        allowClear: true,
+        ajax: {
+            url: '{{ route($route.'.ajax.products') }}',
+            dataType: 'json',
+            delay: 300,
+            data: function (p) { return { search: p.term, page: p.page || 1 }; },
+            processResults: function (d) { return { results: d.results, pagination: d.pagination }; },
+            cache: true
+        }
+    });
+    @endunless
+
     // Load variants when product changes
     $('#product_id').on('change', function () {
         var productId = $(this).val();
@@ -157,7 +168,7 @@ $(function () {
 
         if (!productId) return;
 
-        $.get("{{ route($route.'.get-variants') }}", {product_id: productId}, function (res) {
+        $.get('{{ route($route.'.get-variants') }}', {product_id: productId}, function (res) {
             if (res.has_variants && res.variants.length) {
                 $.each(res.variants, function (i, v) {
                     $('#variant_id').append('<option value="' + v.id + '">' + v.label + ' (' + v.sku + ')</option>');
@@ -166,11 +177,6 @@ $(function () {
             }
         });
     });
-
-    // Trigger on page load if old() value is set
-    @if(old('product_id'))
-    $('#product_id').trigger('change');
-    @endif
 });
 </script>
 @endsection

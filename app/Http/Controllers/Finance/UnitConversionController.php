@@ -184,20 +184,6 @@ class UnitConversionController extends Controller
 
         $result = $this->objectModel::create($data);
 
-        if ($result) {
-            // إنشاء التحويل العكسي تلقائياً
-            $reverseConversion =  $this->objectModel::create([
-                'product_id' => $request->product_id,
-                'variant_id' => $request->variant_id,
-                'base_unit' => $request->target_unit,
-                'target_unit' => $request->base_unit,
-                'conversion_rate' => 1 / $request->conversion_rate,
-                'is_default' => false,
-                'allow_fractions' => $request->allow_fractions ?? true,
-                'decimal_places' => $request->decimal_places ?? 2
-            ]);
-        }
-
         DB::commit();
 
         return redirect(route($this->route . '.index'))->with('message', 'تم الاضافة بنجاح')->with('status', 'success');
@@ -222,7 +208,7 @@ class UnitConversionController extends Controller
         DB::beginTransaction();
 
         $conversion = $this->objectModel::whereId($request->id)->first();
-
+        
         // إذا تم تغيير is_default
         if ($request->has('is_default') && $request->is_default) {
             $this->objectModel::where('product_id', $conversion->product_id)
@@ -239,19 +225,6 @@ class UnitConversionController extends Controller
             'decimal_places'
         ]));
 
-        // تحديث التحويل العكسي تلقائياً
-        $reverseConversion = $this->objectModel::where('product_id', $conversion->product_id)
-            ->where('variant_id', $conversion->variant_id)
-            ->where('base_unit', $conversion->target_unit)
-            ->where('target_unit', $conversion->base_unit)
-            ->first();
-
-        if ($reverseConversion && $request->has('conversion_rate')) {
-            $reverseConversion->update([
-                'conversion_rate' => 1 / $request->conversion_rate
-            ]);
-        }
-
         DB::commit();
 
         return redirect(route($this->route . '.index'))->with('message', 'تم التعديل بنجاح')->with('status', 'success');
@@ -266,16 +239,6 @@ class UnitConversionController extends Controller
             $conversions = $this->objectModel::whereIn('id', $request->id)->get();
 
             foreach ($conversions as $key => $conversion) {
-                // حذف التحويل العكسي أيضاً
-                $reverseConversion = $this->objectModel::where('product_id', $conversion->product_id)
-                    ->where('variant_id', $conversion->variant_id)
-                    ->where('base_unit', $conversion->target_unit)
-                    ->where('target_unit', $conversion->base_unit)
-                    ->first();
-
-                if ($reverseConversion) {
-                    $reverseConversion->delete();
-                }
 
                 $conversion->delete();
             }

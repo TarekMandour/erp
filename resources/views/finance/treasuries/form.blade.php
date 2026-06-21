@@ -7,13 +7,27 @@
         <div class="card-body pt-0">
 
             <div class="row mb-7">
-                <div class="col-md-6 fv-row">
+                <div class="col-md-4 fv-row">
                     <label class="form-label required">اسم الخزنة</label>
                     <input type="text" class="form-control form-control-solid" name="name"
                         value="{{old('name', $data->name ?? '')}}" placeholder="اسم الخزنة" />
                     @error('name')<div class="text-danger mt-1">{{$message}}</div>@enderror
                 </div>
-                <div class="col-md-6 fv-row">
+
+                <div class="col-md-4 fv-row">
+                    <label class="form-label">الحساب</label>
+                    <select class="form-select form-select-solid" name="account_tree_id" data-kt-select2="true" data-close-on-select="true" data-placeholder="اختر ..." data-allow-clear="false">
+                        <option value="">-- الحساب --</option>
+                        @foreach($accounts as $acc)
+                            <option value="{{$acc->id}}" @if(isset($data) && $acc->id == $data->account_tree_id) selected @endif>
+                                {{$acc->code}} - {{$acc->name}}
+                            </option>
+                        @endforeach
+                    </select>
+                    @error('account_tree_id')<div class="text-danger mt-1">{{$message}}</div>@enderror
+                </div>
+
+                <div class="col-md-4 fv-row">
                     <label class="form-label required">العملة</label>
                     <select class="form-select form-select-solid" name="currency">
                         <option value="">-- اختر العملة --</option>
@@ -26,6 +40,8 @@
                     @error('currency')<div class="text-danger mt-1">{{$message}}</div>@enderror
                 </div>
             </div>
+
+            
 
             <div class="row mb-7">
                 <div class="col-md-6 fv-row">

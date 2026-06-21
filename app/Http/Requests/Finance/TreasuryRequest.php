@@ -17,6 +17,7 @@ class TreasuryRequest extends FormRequest
 
         return [
             'name'     => 'required|string|max:255|unique:treasuries,name,' . ($id ?? 'NULL') . ',id',
+            'account_tree_id'        => 'nullable|exists:account_trees,id',
             'currency' => 'required|string|max:10',
         ];
     }
@@ -25,6 +26,7 @@ class TreasuryRequest extends FormRequest
     {
         return [
             'name'     => 'اسم الخزنة',
+            'account_tree_id' => 'شجرة الحساب',
             'currency' => 'العملة',
         ];
     }

@@ -91,6 +91,11 @@ class Product extends Model implements HasMedia
         return $this->hasMany(OrderItem::class);
     }
 
+    public function unitConversions()
+    {
+        return $this->hasMany(UnitConversion::class);
+    }
+
     public function scopeActive($query)
     {
         return $query->where('is_active', true);

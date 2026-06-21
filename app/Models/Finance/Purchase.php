@@ -2,12 +2,13 @@
 
 namespace App\Models\Finance;
 
+use App\Traits\Finance\HasJournalEntry;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 
 class Purchase extends Model
 {
-    use HasFactory;
+    use HasFactory, HasJournalEntry;
 
     protected $fillable = [
         'purchase_number',
@@ -39,19 +40,21 @@ class Purchase extends Model
         'cash'         => 'نقدي',
         'credit'       => 'آجل',
         'installments' => 'أقساط',
+        'wallet'       => 'محفظة الكترونيه',
+        'bank_online'  => 'تحويل بنكي اونلاين',
+        'bank_direct'  => 'تحويل بنكي مباشر',
+        'check'        => 'شيك',
     ];
 
     public static array $statusLabels = [
-        'pending'            => 'معلق',
-        'received'           => 'مستلم',
-        'partially_received' => 'مستلم جزئياً',
+        // 'pending'            => 'معلق',
+        'received'           => 'مكتمل',
         'cancelled'          => 'ملغي',
     ];
 
     public static array $statusBadges = [
-        'pending'            => 'badge-light-warning',
+        // 'pending'            => 'badge-light-warning',
         'received'           => 'badge-light-success',
-        'partially_received' => 'badge-light-info',
         'cancelled'          => 'badge-light-danger',
     ];
 
@@ -92,5 +95,49 @@ class Purchase extends Model
         if (!$last) return 'PO-0001';
         $num = (int) substr($last, 3);
         return 'PO-' . str_pad($num + 1, 4, '0', STR_PAD_LEFT);
+    }
+
+    // =========================================================================
+    //  HasJournalEntry overrides
+    // =========================================================================
+
+    public function getScenarioCode(): string
+    {
+        return 'PURCHASE_' . strtoupper($this->payment_type ?? 'CREDIT');
+    }
+
+    public function getFallbackScenarioCode(): string
+    {
+        return 'PURCHASE_CASH';
+    }
+
+    public function getOperationType(): string
+    {
+        return 'purchase';
+    }
+
+    public function getEntryType(): string
+    {
+        return 'purchase';
+    }
+
+    public function isPaymentType(): bool
+    {
+        return true;
+    }
+
+    public function getTransactionAmount(): float
+    {
+        return (float) ($this->total ?? 0);
+    }
+
+    public function getPaymentTypeLabel(): string
+    {
+        return static::$paymentTypeLabels[$this->payment_type] ?? ($this->payment_type ?? '');
+    }
+
+    public function getPostableDescription(): string
+    {
+        return "فاتورة مشتريات رقم {$this->purchase_number}";
     }
 }

@@ -25,25 +25,24 @@
                     <form id="filter-form">
                         <div class="mb-5">
                             <label class="form-label fw-semibold">المستودع :</label>
-                            <select class="form-select form-select-solid" id="fwarehouse">
+                            <select class="form-select form-select-solid" id="fwarehouse" data-kt-select2="true" data-close-on-select="true" data-placeholder="اختر ..." data-allow-clear="false">
                                 <option value="">الكل</option>
                                 @foreach($warehouses as $w)
                                 <option value="{{$w->id}}">{{$w->name}}</option>
                                 @endforeach
-                            </select>
+                            </select> 
                         </div>
                         <div class="mb-5">
                             <label class="form-label fw-semibold">المنتج :</label>
-                            <select class="form-select form-select-solid" id="fproduct">
-                                <option value="">الكل</option>
-                                @foreach($products as $p)
-                                <option value="{{$p->id}}">{{$p->name}}</option>
-                                @endforeach
+                            <select class="form-select form-select-solid" id="fproduct" data-kt-select2="true"
+                                data-close-on-select="true" data-placeholder="اختر ..." data-allow-clear="false">
+                                <option></option>
                             </select>
+
                         </div>
                         <div class="mb-10">
                             <label class="form-label fw-semibold">حالة المخزون :</label>
-                            <select class="form-select form-select-solid" id="fstock">
+                            <select class="form-select form-select-solid" id="fstock" data-kt-select2="true" data-close-on-select="true" data-placeholder="اختر ..." data-allow-clear="false">
                                 <option value="">الكل</option>
                                 <option value="ok">متاح</option>
                                 <option value="low">منخفض</option>
@@ -111,7 +110,34 @@
 @section('script')
 <script src="{{asset('dash/assets/plugins/custom/datatables/datatables.bundle.js')}}"></script>
 <script>
+
+function initProductSelect(selector, dropdownParent) {
+    $(selector).select2({
+        placeholder: 'Search product',
+        minimumInputLength: 3,
+        dropdownParent: dropdownParent, // Important for modals
+        ajax: {
+            url: '/admin/finance/products/search',
+            dataType: 'json',
+            delay: 300,
+            data: function (params) {
+                return {
+                    search: params.term
+                };
+            },
+            processResults: function (data) {
+                return {
+                    results: data.results
+                };
+            }
+        }
+    });
+}
+
 $(function () {
+
+    initProductSelect('#fproduct');
+
     var table = $('#kt_table_list').DataTable({
         processing: false, searching: false, serverSide: true, pageLength: 25, sort: false,
         language: {"loadingRecords": "انتظر لحظات ..."},
@@ -147,5 +173,7 @@ $(function () {
         }).toString();
     });
 });
+
+
 </script>
 @endsection

@@ -38,6 +38,10 @@
                                 <option value="cash">نقدي</option>
                                 <option value="credit">آجل</option>
                                 <option value="installments">أقساط</option>
+                                <option value="wallet">محفظة الكترونيه</option>
+                                <option value="bank_online">تحويل بنكي اونلاين</option>
+                                <option value="bank_direct">تحويل بنكي مباشر</option>
+                                <option value="check">شيك</option>
                             </select>
                         </div>
                         <div class="mb-7">
@@ -167,6 +171,8 @@ $(function () {
     });
     $("#btn_delete").click(function (event) {
         event.preventDefault();
+        var token = $(this).data("token");
+
         var checkIDs = $("#kt_table_list input:checkbox:checked").map(function () { return $(this).val(); }).get();
         if (checkIDs.length > 0) {
             Swal.fire({
@@ -177,7 +183,7 @@ $(function () {
                 if (result.value) {
                     $.ajax({
                         type: "POST", url: "{{ route($route.'.delete') }}",
-                        data: {ids: checkIDs, _token: $(event.target).data("token")},
+                        data: {ids: checkIDs, _token: token},
                         success: function () { table.ajax.reload(); }
                     });
                 }

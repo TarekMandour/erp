@@ -31,8 +31,8 @@
             <div class="col-md-4 fv-row">
                 <label class="form-label required">المورد</label>
                 <select class="form-select form-select-solid" name="supplier_id" id="supplier_select"
-                        data-placeholder="ابحث عن مورد ...">
-                    @if($isEdit && $d->supplier)
+                        data-kt-select2="true" data-close-on-select="true" data-placeholder="اختر ..." data-allow-clear="false">
+                        @if($isEdit && $d->supplier)
                         <option value="{{$d->supplier_id}}" selected>
                             {{$d->supplier->company_name ?: $d->supplier->name}}
                         </option>
@@ -44,7 +44,7 @@
             {{-- Warehouse --}}
             <div class="col-md-4 fv-row">
                 <label class="form-label required">المستودع</label>
-                <select class="form-select form-select-solid" name="warehouse_id">
+                <select class="form-select form-select-solid" name="warehouse_id" data-kt-select2="true" data-close-on-select="true" data-placeholder="اختر ..." data-allow-clear="false">
                     <option value="">اختر المستودع</option>
                     @foreach($warehouses as $w)
                         <option value="{{$w->id}}" {{old('warehouse_id', $isEdit ? $d->warehouse_id : '') == $w->id ? 'selected' : ''}}>{{$w->name}}</option>
@@ -80,7 +80,8 @@
             {{-- Payment type --}}
             <div class="col-md-3 fv-row">
                 <label class="form-label required">نوع الدفع</label>
-                <select class="form-select form-select-solid" name="payment_type">
+                <select class="form-select form-select-solid" name="payment_type" data-kt-select2="true" data-minimum-results-for-search="Infinity" data-close-on-select="true" data-placeholder="اختر ..." data-allow-clear="false">
+                    <option value="">اختر نوع الدفع</option>
                     @foreach(\App\Models\Finance\Purchase::$paymentTypeLabels as $key => $label)
                         <option value="{{$key}}" {{old('payment_type', $isEdit ? $d->payment_type : 'cash') == $key ? 'selected' : ''}}>{{$label}}</option>
                     @endforeach
@@ -91,9 +92,10 @@
             {{-- Status --}}
             <div class="col-md-3 fv-row">
                 <label class="form-label required">الحالة</label>
-                <select class="form-select form-select-solid" name="status">
+                <select class="form-select form-select-solid" name="status" data-kt-select2="true" data-minimum-results-for-search="Infinity" data-close-on-select="true" data-placeholder="اختر ..." data-allow-clear="false">
+                    <option value="">اختر الحالة</option>
                     @foreach(\App\Models\Finance\Purchase::$statusLabels as $key => $label)
-                        <option value="{{$key}}" {{old('status', $isEdit ? $d->status : 'pending') == $key ? 'selected' : ''}}>{{$label}}</option>
+                        <option value="{{$key}}" {{old('status', $isEdit ? $d->status : 'received') == $key ? 'selected' : ''}}>{{$label}}</option>
                     @endforeach
                 </select>
                 @error('status')<div class="text-danger fs-7 mt-1">{{$message}}</div>@enderror
@@ -130,6 +132,7 @@
                     <tr class="text-start text-dark bg-light-dark fw-bold fs-7 text-uppercase gs-0">
                         <th class="min-w-200px">المنتج</th>
                         <th class="min-w-150px">المتغير</th>
+                        <th class="w-150px">الوحدة</th>
                         <th class="w-100px">الكمية</th>
                         <th class="w-120px">سعر الوحدة</th>
                         <th class="w-100px">الخصم</th>
@@ -156,6 +159,22 @@
                                     @endif
                                 </select>
                             </td>
+                            <td>
+                                <select class="form-select form-select-solid form-select-sm item-unit"
+                                        name="items[{{$loop->index}}][unit_conversion_id]"
+                                        data-unit-id="{{ $i->unit_conversion_id }}" 
+                                        data-kt-select2="true" data-minimum-results-for-search="Infinity" data-close-on-select="true" data-placeholder="اختر ..." data-allow-clear="false">
+                                    <option value="">الوحدة الأساسية</option>
+                                    @if($i->unitConversion)
+                                        <option value="{{ $i->unit_conversion_id }}" selected
+                                                data-conversion-rate="{{ $i->unitConversion->conversion_rate }}"
+                                                data-allow-fractions="{{ $i->unitConversion->allow_fractions ? 'true' : 'false' }}"
+                                                data-decimal-places="{{ $i->unitConversion->decimal_places }}">
+                                            {{ $i->unitConversion->target_unit }} (× {{ $i->unitConversion->conversion_rate }} {{ $i->unitConversion->base_unit }})
+                                        </option>
+                                    @endif
+                                </select>
+                            </td>
                             <td><input type="number" class="form-control form-control-solid form-control-sm item-qty" name="items[{{$loop->index}}][quantity]" value="{{$i->quantity}}" min="0.001" step="0.001"></td>
                             <td><input type="number" class="form-control form-control-solid form-control-sm item-cost" name="items[{{$loop->index}}][unit_cost]" value="{{$i->unit_cost}}" min="0" step="0.01"></td>
                             <td><input type="number" class="form-control form-control-solid form-control-sm item-disc" name="items[{{$loop->index}}][discount]" value="{{$i->discount}}" min="0" step="0.01"></td>
@@ -179,8 +198,12 @@
                 <div class="mb-5">
                     <label class="form-label">المبلغ المدفوع</label>
                     <div class="input-group">
-                        <input type="number" name="paid" class="form-control form-control-solid"
+                        <input type="number" name="paid" id="paid_input" class="form-control form-control-solid"
                                value="{{old('paid', $isEdit ? $d->paid : 0)}}" min="0" step="0.01">
+                        <button type="button" id="fill_paid_btn" class="btn btn-light-info fw-semibold" title="تعبئة بالإجمالي"> 
+                            <i class="ki-duotone ki-double-check fs-5"><span class="path1"></span><span class="path2"></span></i>
+                            كامل
+                        </button>
                         <span class="input-group-text">ر.س</span>
                     </div>
                     @error('paid')<div class="text-danger fs-7 mt-1">{{$message}}</div>@enderror

@@ -23,6 +23,10 @@
                         <option value="cash" {{old('payment_type', $data->payment_type ?? '') == 'cash' ? 'selected' : ''}}>نقدي</option>
                         <option value="credit" {{old('payment_type', $data->payment_type ?? '') == 'credit' ? 'selected' : ''}}>آجل</option>
                         <option value="installments" {{old('payment_type', $data->payment_type ?? '') == 'installments' ? 'selected' : ''}}>أقساط</option>
+                        <option value="wallet" {{old('payment_type', $data->payment_type ?? '') == 'wallet' ? 'selected' : ''}}>محفظة الكترونيه</option>
+                        <option value="bank_online" {{old('payment_type', $data->payment_type ?? '') == 'bank_online' ? 'selected' : ''}}>تحويل بنكي اونلاين</option>
+                        <option value="bank_direct" {{old('payment_type', $data->payment_type ?? '') == 'bank_direct' ? 'selected' : ''}}>تحويل بنكي مباشر</option>
+                        <option value="check" {{old('payment_type', $data->payment_type ?? '') == 'check' ? 'selected' : ''}}>شيك</option>
                     </select>
                     @error('payment_type')<div class="text-danger mt-1">{{$message}}</div>@enderror
                 </div>

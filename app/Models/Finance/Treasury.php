@@ -10,6 +10,7 @@ class Treasury extends Model
 
     protected $fillable = [
         'name',
+        'account_tree_id',
         'currency',
         'balance',
         'is_active',

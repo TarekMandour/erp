@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Finance;
 
 use App\Http\Controllers\Controller;
+use App\Models\Finance\AccountTree;
 use Illuminate\Http\Request;
 use Yajra\DataTables\Facades\DataTables;
 use Rap2hpoutre\FastExcel\FastExcel;
@@ -65,7 +66,8 @@ class TreasuriesController extends Controller
     public function create()
     {
         $data = new Treasury();
-        return view($this->viewPath . '.create', compact('data'));
+        $accounts    = AccountTree::where('is_active', true)->orderBy('code')->get();
+        return view($this->viewPath . '.create', compact('data', 'accounts'));
     }
 
     public function store(TreasuryRequest $request)
@@ -79,7 +81,8 @@ class TreasuriesController extends Controller
     public function edit($id)
     {
         $data = $this->objectModel::findOrFail($id);
-        return view($this->viewPath . '.edit', compact('data'));
+        $accounts    = AccountTree::where('is_active', true)->orderBy('code')->get();
+        return view($this->viewPath . '.edit', compact('data', 'accounts'));
     }
 
     public function update(TreasuryRequest $request)

@@ -23,6 +23,8 @@ return new class extends Migration
             $table->integer('sort')->default(0);
             $table->decimal('purchase_price', 15, 2)->default(0);
             $table->decimal('selling_price', 15, 2)->default(0);
+            $table->decimal('cost_price', 15, 2)->default(0)->comment('التكلفة الفعلية بعد الخصم والضرائب');
+            $table->decimal('average_cost', 15, 2)->default(0)->comment('متوسط تكلفة المنتج من جميع الأنواع');
             $table->decimal('tax_rate', 5, 2)->default(0);
             $table->integer('alert_quantity')->default(0);
             $table->boolean('is_active')->default(true);

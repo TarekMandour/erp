@@ -38,7 +38,7 @@
                 <div class="row mb-7">
                     <div class="col-md-5 fv-row">
                         <label class="form-label required">من المستودع (المصدر)</label>
-                        <select class="form-select form-select-solid" name="from_warehouse_id" id="from_warehouse_id">
+                        <select class="form-select form-select-solid" name="from_warehouse_id" id="from_warehouse_id" data-kt-select2="true" data-close-on-select="true" data-placeholder="اختر ..." data-allow-clear="false">
                             <option value="">-- اختر المستودع المصدر --</option>
                             @foreach($warehouses as $w)
                             <option value="{{$w->id}}" {{old('from_warehouse_id') == $w->id ? 'selected' : ''}}>{{$w->name}}</option>
@@ -53,7 +53,7 @@
 
                     <div class="col-md-5 fv-row">
                         <label class="form-label required">إلى المستودع (الوجهة)</label>
-                        <select class="form-select form-select-solid" name="to_warehouse_id" id="to_warehouse_id">
+                        <select class="form-select form-select-solid" name="to_warehouse_id" id="to_warehouse_id" data-kt-select2="true" data-close-on-select="true" data-placeholder="اختر ..." data-allow-clear="false">
                             <option value="">-- اختر المستودع الوجهة --</option>
                             @foreach($warehouses as $w)
                             <option value="{{$w->id}}" {{old('to_warehouse_id') == $w->id ? 'selected' : ''}}>{{$w->name}}</option>
@@ -67,20 +67,14 @@
                 <div class="row mb-7">
                     <div class="col-md-5 fv-row">
                         <label class="form-label required">المنتج</label>
-                        <select class="form-select form-select-solid" name="product_id" id="product_id">
-                            <option value="">-- اختر المنتج --</option>
-                            @foreach($products as $p)
-                            <option value="{{$p->id}}" data-has-variants="{{$p->has_variants ? '1' : '0'}}" {{old('product_id') == $p->id ? 'selected' : ''}}>
-                                {{$p->name}} ({{$p->sku}})
-                            </option>
-                            @endforeach
+                        <select class="form-select form-select-solid" name="product_id" id="product_id" data-allow-clear="false">
                         </select>
                         @error('product_id')<div class="text-danger mt-1">{{$message}}</div>@enderror
                     </div>
 
                     <div class="col-md-4 fv-row" id="variant-section" style="display:none">
                         <label class="form-label">النوع / المتغير</label>
-                        <select class="form-select form-select-solid" name="variant_id" id="variant_id">
+                        <select class="form-select form-select-solid" name="variant_id" id="variant_id" data-kt-select2="true" data-close-on-select="true" data-placeholder="اختر ..." data-allow-clear="false">
                             <option value="">-- اختر النوع --</option>
                         </select>
                         @error('variant_id')<div class="text-danger mt-1">{{$message}}</div>@enderror
@@ -129,12 +123,12 @@
 <script>
 $(function () {
     var getVariantsUrl = "{{ route('finance.inventory.get-variants') }}";
-    var getStockUrl    = "{{ url('finance/inventory/get-stock') }}";
+    var getStockUrl    = "{{ url('admin/finance/inventory/get-stock') }}";
 
     function loadAvailableStock() {
         var productId   = $('#product_id').val();
         var variantId   = $('#variant_id').val();
-        var warehouseId = $('#from_warehouse_id').val();
+        var warehouseId = $('#from_warehouse_id').val(); 
 
         if (!productId || !warehouseId) {
             $('#available-section').hide();
@@ -147,6 +141,7 @@ $(function () {
             variant_id:   variantId || '',
             warehouse_id: warehouseId
         }, function (res) {
+            console.log(res);
             $('#available_qty').val(res.quantity ?? '0.000');
             $('#available-section').show();
         }).fail(function () {
@@ -155,30 +150,39 @@ $(function () {
         });
     }
 
+    // Init product Select2 with AJAX search
+
+    $('#product_id').select2({
+        dir: 'rtl',
+        placeholder: 'ابحث عن منتج ...',
+        allowClear: true,
+        ajax: {
+            url: "{{ route('finance.inventory.ajax.products') }}",
+            dataType: 'json',
+            delay: 300,
+            data: function (p) { return { search: p.term, page: p.page || 1 }; },
+            processResults: function (d) { return { results: d.results, pagination: d.pagination }; },
+            cache: true
+        }
+    });
+
+
     // Load variants when product changes
     $('#product_id').on('change', function () {
-        var opt = $(this).find(':selected');
-        var hasVariants = opt.data('has-variants');
-
+        var productId = $(this).val();
         $('#variant_id').empty().append('<option value="">-- اختر النوع --</option>');
         $('#variant-section').hide();
-        $('#available-section').hide();
-        $('#available_qty').val('');
 
-        if (!$(this).val()) return;
+        if (!productId) return;
 
-        if (hasVariants == '1') {
-            $.get(getVariantsUrl, {product_id: $(this).val()}, function (res) {
-                if (res.variants && res.variants.length) {
-                    $.each(res.variants, function (i, v) {
-                        $('#variant_id').append('<option value="' + v.id + '">' + v.label + '</option>');
-                    });
-                    $('#variant-section').show();
-                }
-            });
-        } else {
-            loadAvailableStock();
-        }
+        $.get("{{ route('finance.inventory.get-variants') }}", {product_id: productId}, function (res) {
+            if (res.has_variants && res.variants.length) {
+                $.each(res.variants, function (i, v) {
+                    $('#variant_id').append('<option value="' + v.id + '">' + v.label + ' (' + v.sku + ')</option>');
+                });
+                $('#variant-section').show();
+            }
+        });
     });
 
     // Reload stock when variant changes

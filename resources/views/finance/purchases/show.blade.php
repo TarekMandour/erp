@@ -170,14 +170,27 @@
 
             {{-- ── Items Table ──────────────────────────────────── --}}
             <div class="table-responsive mb-7">
+                @if($pricingMode === 'inclusive')
+                <div class="alert alert-warning py-2 px-4 mb-3 fs-7">
+                    <i class="ki-duotone ki-information-5 fs-5 me-1"><span class="path1"></span><span class="path2"></span><span class="path3"></span></i>
+                    <strong>السعر شامل الضريبة:</strong> الأسعار المدخلة تشمل قيمة الضريبة — يتم استخراجها تلقائياً.
+                </div>
+                @else
+                <div class="alert alert-info py-2 px-4 mb-3 fs-7">
+                    <i class="ki-duotone ki-information-5 fs-5 me-1"><span class="path1"></span><span class="path2"></span><span class="path3"></span></i>
+                    <strong>السعر غير شامل الضريبة:</strong> الضريبة مُضافة فوق سعر المنتج.
+                </div>
+                @endif
                 <table class="table table-bordered align-middle fs-7 mb-0" style="border-color:#dee2e6;">
                     <thead class="table-dark">
                         <tr class="fw-bold text-white text-center">
                             <th class="text-start">#</th>
                             <th class="text-start">المنتج</th>
                             <th class="text-start">المتغير</th>
+                            <th>الوحدة</th>
                             <th>الكمية</th>
                             <th>سعر الوحدة</th>
+                            <th>السعر قبل الضريبة</th>
                             <th>الخصم</th>
                             <th>ض%</th>
                             <th>الضريبة</th>
@@ -186,6 +199,23 @@
                     </thead>
                     <tbody>
                         @forelse($data->items as $index => $item)
+                        @php
+                            $qty      = (float)$item->quantity;
+                            $cost     = (float)$item->unit_cost;
+                            $disc     = (float)$item->discount;
+                            $taxRate  = (float)$item->tax_rate;
+                            if ($pricingMode === 'inclusive') {
+                                $unitCostBefore = $taxRate > 0 ? round($cost / (1 + $taxRate / 100), 4) : $cost;
+                                $gross          = $qty * $cost - $disc;
+                                $lineTax        = round($gross * $taxRate / (100 + $taxRate), 2);
+                                $lineTotal      = $gross;
+                            } else {
+                                $unitCostBefore = $cost;
+                                $gross          = $qty * $cost - $disc;
+                                $lineTax        = round($gross * $taxRate / 100, 2);
+                                $lineTotal      = $gross + $lineTax;
+                            }
+                        @endphp
                         <tr>
                             <td>{{$index + 1}}</td>
                             <td>
@@ -197,22 +227,28 @@
                             <td class="text-gray-600">
                                 {{$item->variant?->sku ?? '—'}}
                             </td>
-                            <td class="text-center fw-semibold">{{number_format((float)$item->quantity, 3)}}</td>
-                            <td class="text-center">{{number_format((float)$item->unit_cost, 2)}}</td>
-                            <td class="text-center text-danger">{{number_format((float)$item->discount, 2)}}</td>
-                            <td class="text-center">{{number_format((float)$item->tax_rate, 2)}}%</td>
-                            <td class="text-center text-warning fw-semibold">
-                                @php
-                                    $lineBase = (float)$item->quantity * (float)$item->unit_cost - (float)$item->discount;
-                                    $lineTax  = $lineBase * (float)$item->tax_rate / 100;
-                                @endphp
-                                {{number_format($lineTax, 2)}}
+                            <td class="text-center">
+                                @if($item->unitConversion)
+                                    @php $uc = $item->unitConversion; @endphp
+                                    <span class="badge badge-light-primary d-block mb-1">{{$uc->target_unit}}</span>
+                                    <small class="text-muted d-block">
+                                        = {{number_format($qty * $uc->conversion_rate, $uc->decimal_places)}} {{$uc->base_unit}}
+                                    </small>
+                                @else
+                                    <span class="text-muted">—</span>
+                                @endif
                             </td>
-                            <td class="text-center fw-bold text-gray-900">{{number_format((float)$item->total, 2)}}</td>
+                            <td class="text-center fw-semibold">{{number_format($qty, 3)}}</td>
+                            <td class="text-center">{{number_format($cost, 2)}}</td>
+                            <td class="text-center text-gray-600">{{number_format($unitCostBefore, 2)}}</td>
+                            <td class="text-center text-danger">{{number_format($disc, 2)}}</td>
+                            <td class="text-center">{{number_format($taxRate, 2)}}%</td>
+                            <td class="text-center text-warning fw-semibold">{{number_format($lineTax, 2)}}</td>
+                            <td class="text-center fw-bold text-gray-900">{{number_format($lineTotal, 2)}}</td>
                         </tr>
                         @empty
                         <tr>
-                            <td colspan="9" class="text-center text-muted py-5">لا توجد بنود</td>
+                            <td colspan="11" class="text-center text-muted py-5">لا توجد بنود</td>
                         </tr>
                         @endforelse
                     </tbody>

@@ -11,6 +11,7 @@ return new class extends Migration
         Schema::create('treasuries', function (Blueprint $table) {
             $table->id();
             $table->string('name');
+            $table->foreignId('account_tree_id')->constrained('account_trees');
             $table->string('currency')->default('SAR');
             $table->decimal('balance', 15, 2)->default(0);
             $table->boolean('is_active')->default(true);

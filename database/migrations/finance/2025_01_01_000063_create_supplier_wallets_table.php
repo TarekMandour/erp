@@ -11,6 +11,7 @@ return new class extends Migration
         Schema::create('supplier_wallets', function (Blueprint $table) {
             $table->id();
             $table->foreignId('supplier_id')->constrained('suppliers')->cascadeOnDelete();
+            $table->unsignedBigInteger('purchase_id')->nullable();
             $table->unsignedBigInteger('voucher_id')->nullable();
             $table->date('date');
             $table->text('description')->nullable();

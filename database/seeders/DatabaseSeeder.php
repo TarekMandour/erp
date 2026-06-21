@@ -4,8 +4,11 @@ namespace Database\Seeders;
 
 use App\Models\User;
 // use Illuminate\Database\Console\Seeds\WithoutModelEvents;
+use Database\Seeders\ClothesShop\PostingRuleSeeder;
+use Database\Seeders\ClothesShop\PostingScenarioSeeder;
 use Illuminate\Database\Seeder;
 use Database\Seeders\ClothesShop\ClothesShopSeeder;
+use Database\Seeders\ClothesShop\AccountTreeSeeder;
 use Database\Seeders\FoodShop\FoodShopSeeder;
 
 class DatabaseSeeder extends Seeder
@@ -25,10 +28,12 @@ class DatabaseSeeder extends Seeder
 
         $this->call([
             AdminSeeder::class,
-            CompanySeeder::class,
             SettingSeeder::class,
             ClothesShopSeeder::class,
-            FoodShopSeeder::class,
+            AccountTreeSeeder::class,
+            PostingScenarioSeeder::class,
+            PostingRuleSeeder::class,
+            // FoodShopSeeder::class,
         ]);
     }
 }

@@ -12,6 +12,7 @@ use App\Models\Finance\InventoryItem;
 use App\Models\Finance\InventoryTransaction;
 use App\Models\Finance\Product;
 use App\Models\Finance\ProductVariant;
+use App\Models\Finance\UnitConversion;
 use App\Models\Finance\Warehouse;
 
 class InventoryController extends Controller
@@ -108,7 +109,8 @@ class InventoryController extends Controller
                          . ' ' . $badge;
                 })
                 ->addColumn('action', function ($row) {
-                    return '<a href="' . route($this->route . '.adjust-item', $row->id) . '" class="btn btn-xs btn-icon btn-primary me-1" title="تعديل المخزون"><i class="bi bi-plus-slash-minus fs-5"></i></a>'
+                    return '<a href="' . route($this->route . '.product-report', $row->product_id) . '" class="btn btn-xs btn-icon btn-warning me-1" title="تقرير المنتج"><i class="bi bi-bar-chart fs-5"></i></a>'
+                         . '<a href="' . route($this->route . '.adjust-item', $row->id) . '" class="btn btn-xs btn-icon btn-primary me-1" title="تعديل المخزون"><i class="bi bi-plus-slash-minus fs-5"></i></a>'
                          . '<a href="' . route($this->route . '.history', $row->id) . '" class="btn btn-xs btn-icon btn-info" title="سجل الحركات"><i class="bi bi-clock-history fs-5"></i></a>';
                 })
                 ->rawColumns(['checkbox', 'product_name', 'variant_info', 'quantity_display', 'action'])
@@ -128,9 +130,8 @@ class InventoryController extends Controller
     {
         $item       = $id ? InventoryItem::with(['product', 'variant', 'warehouse'])->findOrFail($id) : null;
         $warehouses = Warehouse::where('is_active', true)->orderBy('name')->get();
-        $products   = Product::where('is_active', true)->orderBy('name')->get();
 
-        return view('finance.inventory.adjust', compact('item', 'warehouses', 'products'));
+        return view('finance.inventory.adjust', compact('item', 'warehouses'));
     }
 
     public function storeAdjust(Request $request)
@@ -273,6 +274,32 @@ class InventoryController extends Controller
     }
 
     // -------------------------------------------------------
+    // AJAX: Search products (Select2)
+    // -------------------------------------------------------
+    public function ajaxProducts(Request $request)
+    {
+        $search = $request->search;
+
+        $rows = Product::select('id', 'name', 'sku', 'has_variants')
+            ->when($search, fn($q) => $q->where('name', 'like', "%{$search}%")
+                ->orWhere('sku', 'like', "%{$search}%"))
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->paginate(20);
+
+        $results = $rows->map(fn($p) => [
+            'id'           => $p->id,
+            'text'         => $p->name . ' (' . $p->sku . ')',
+            'has_variants' => $p->has_variants ? 1 : 0,
+        ]);
+
+        return response()->json([
+            'results'    => $results,
+            'pagination' => ['more' => $rows->hasMorePages()],
+        ]);
+    }
+
+    // -------------------------------------------------------
     // AJAX: Get variants for a product
     // -------------------------------------------------------
     public function getVariants(Request $request)
@@ -344,5 +371,53 @@ class InventoryController extends Controller
         return response()->json([
             'quantity' => $item ? number_format((float) $item->quantity, 3) : '0.000',
         ]);
+    }
+
+    // -------------------------------------------------------
+    // Product Stock Report
+    // -------------------------------------------------------
+    public function productReport(Request $request, $id)
+    {
+        $product = Product::with(['category', 'brand', 'unit', 'variants', 'unitConversions.variant'])
+            ->findOrFail($id);
+
+        if ($request->ajax()) {
+            $query = InventoryTransaction::with(['warehouse', 'variant'])
+                ->where('product_id', $id)
+                ->orderByDesc('created_at');
+
+            return DataTables::of($query)
+                ->addIndexColumn()
+                ->addColumn('type_badge', function ($row) {
+                    return match ($row->type) {
+                        'in'         => '<span class="badge badge-light-success">وارد</span>',
+                        'out'        => '<span class="badge badge-light-danger">صادر</span>',
+                        'adjustment' => '<span class="badge badge-light-warning">تعديل</span>',
+                        'transfer_in'  => '<span class="badge badge-light-primary">تحويل وارد</span>',
+                        'transfer_out' => '<span class="badge badge-light-secondary">تحويل صادر</span>',
+                        default      => e($row->type),
+                    };
+                })
+                ->addColumn('warehouse_name', fn($row) => e($row->warehouse->name ?? '—'))
+                ->addColumn('variant_info', function ($row) {
+                    if (!$row->variant) return '—';
+                    $attrs = $row->variant->attributes ?? [];
+                    return is_array($attrs) && count($attrs)
+                        ? implode(' / ', array_values($attrs))
+                        : e($row->variant->sku);
+                })
+                ->addColumn('qty_display', fn($row) => number_format((float)$row->quantity, 3))
+                ->addColumn('cost_display', fn($row) => number_format((float)$row->unit_cost, 2))
+                ->addColumn('date_display', fn($row) => $row->created_at->format('Y-m-d H:i'))
+                ->rawColumns(['type_badge'])
+                ->make(true);
+        }
+
+        $stockRows  = InventoryItem::with(['warehouse', 'variant'])
+            ->where('product_id', $id)
+            ->get();
+        $totalStock = $stockRows->sum(fn($r) => (float)$r->quantity);
+
+        return view('finance.inventory.product-report', compact('product', 'stockRows', 'totalStock'));
     }
 }

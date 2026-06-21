@@ -13,11 +13,20 @@ use App\Models\Finance\Supplier;
 use App\Models\Finance\Warehouse;
 use App\Models\Finance\Product;
 use App\Models\Finance\ProductVariant;
+use App\Models\Finance\UnitConversion;
+use App\Events\Finance\Purchases\PurchaseEvent;
 use App\Http\Requests\Finance\PurchaseRequest;
+use App\Services\Finance\PurchaseService;
+use App\Services\Finance\TransactionsService;
 
 class PurchasesController extends Controller
 {
     private string $route = 'finance.purchases';
+
+    public function __construct(
+        private PurchaseService $purchaseService,
+        private TransactionsService $transactionsService,
+    ) {}
 
     // -------------------------------------------------------
     // Index — DataTables
@@ -82,10 +91,12 @@ class PurchasesController extends Controller
     // -------------------------------------------------------
     public function create()
     {
-        $warehouses = Warehouse::where('is_active', true)->select('id', 'name')->orderBy('name')->get();
+        $warehouses  = Warehouse::where('is_active', true)->select('id', 'name')->orderBy('name')->get();
+        $pricingMode = \App\Helpers\Helper::pricingMode();
         return view('finance.purchases.create', [
             'warehouses'     => $warehouses,
             'purchaseNumber' => Purchase::generateNumber(),
+            'pricingMode'    => $pricingMode,
         ]);
     }
 
@@ -94,11 +105,26 @@ class PurchasesController extends Controller
     // -------------------------------------------------------
     public function store(PurchaseRequest $request)
     {
-        DB::transaction(function () use ($request) {
-            $purchase = Purchase::create($this->mapHeader($request));
-            $this->syncItems($purchase, $request->items);
-            $this->recalcTotals($purchase);
-        });
+        $purchase = null;
+
+        // تعطيل الـ Observer داخل المعاملة لمنع إنشاء قيود متعددة
+        $dispatcher = Purchase::getEventDispatcher();
+        Purchase::unsetEventDispatcher();
+
+        try {
+            DB::transaction(function () use ($request, &$purchase) {
+                $purchase = Purchase::create($this->mapHeader($request));
+                $this->syncItems($purchase, $request->items);
+                $this->recalcTotals($purchase);
+            });
+        } finally {
+            Purchase::setEventDispatcher($dispatcher);
+        }
+
+        // إطلاق حدث واحد فقط بعد اكتمال البيانات النهائية
+        PurchaseEvent::dispatch($purchase->fresh(), 'create');
+
+        $this->purchaseService->apply($purchase->fresh(['items.unitConversion']));
 
         return redirect()->route($this->route . '.index')
             ->with('success', 'تم إضافة فاتورة الشراء بنجاح.');
@@ -114,11 +140,13 @@ class PurchasesController extends Controller
             'warehouse:id,name',
             'items.product:id,name,sku',
             'items.variant:id,product_id,sku,attributes',
+            'items.unitConversion',
         ])->findOrFail($id);
 
-        $settings = \App\Helpers\Helper::settings();
+        $settings    = \App\Helpers\Helper::settings();
+        $pricingMode = \App\Helpers\Helper::pricingMode();
 
-        return view('finance.purchases.show', compact('data', 'settings'));
+        return view('finance.purchases.show', compact('data', 'settings', 'pricingMode'));
     }
 
     // -------------------------------------------------------
@@ -126,9 +154,10 @@ class PurchasesController extends Controller
     // -------------------------------------------------------
     public function edit($id)
     {
-        $data       = Purchase::with(['items.product:id,name,sku', 'items.variant:id,product_id,sku,attributes'])->findOrFail($id);
-        $warehouses = Warehouse::where('is_active', true)->select('id', 'name')->orderBy('name')->get();
-        return view('finance.purchases.edit', compact('data', 'warehouses'));
+        $data        = Purchase::with(['items.product:id,name,sku', 'items.variant:id,product_id,sku,attributes', 'items.unitConversion'])->findOrFail($id);
+        $warehouses  = Warehouse::where('is_active', true)->select('id', 'name')->orderBy('name')->get();
+        $pricingMode = \App\Helpers\Helper::pricingMode();
+        return view('finance.purchases.edit', compact('data', 'warehouses', 'pricingMode'));
     }
 
     // -------------------------------------------------------
@@ -136,13 +165,39 @@ class PurchasesController extends Controller
     // -------------------------------------------------------
     public function update(PurchaseRequest $request)
     {
-        DB::transaction(function () use ($request) {
-            $purchase = Purchase::findOrFail($request->id);
-            $purchase->update($this->mapHeader($request));
-            $purchase->items()->delete();
-            $this->syncItems($purchase, $request->items);
-            $this->recalcTotals($purchase);
-        });
+        $purchase    = null;
+        $isCancelled = $request->status === 'cancelled';
+
+        $dispatcher = Purchase::getEventDispatcher();
+        Purchase::unsetEventDispatcher();
+
+        try {
+            DB::transaction(function () use ($request, &$purchase, $isCancelled) {
+                $purchase = Purchase::with('items.unitConversion')->findOrFail($request->id);
+
+                // عكس آثار المحفظة + المخزون + التكلفة دائماً
+                $this->purchaseService->reverse($purchase);
+
+                $purchase->update($this->mapHeader($request));
+
+                if (! $isCancelled) {
+                    $purchase->items()->delete();
+                    $this->syncItems($purchase, $request->items);
+                    $this->recalcTotals($purchase);
+                }
+            });
+        } finally {
+            Purchase::setEventDispatcher($dispatcher);
+        }
+
+        if (! $isCancelled) {
+            // إعادة إنشاء القيد مباشرة (synchronous) لتجنب تكرار القيود
+            $this->transactionsService->regenerate($purchase->fresh());
+            $this->purchaseService->apply($purchase->fresh(['items.unitConversion']));
+        } else {
+            // إلغاء: عكس القيد فقط
+            $this->transactionsService->reverse($purchase->fresh());
+        }
 
         return redirect()->route($this->route . '.index')
             ->with('success', 'تم تحديث فاتورة الشراء بنجاح.');
@@ -153,7 +208,15 @@ class PurchasesController extends Controller
     // -------------------------------------------------------
     public function destroy(Request $request)
     {
-        Purchase::findOrFail($request->id)->delete();
+        $purchase = Purchase::with('items.unitConversion')->findOrFail($request->id);
+
+        // عكس المحفظة + المخزون + التكلفة
+        $this->purchaseService->reverse($purchase);
+
+        // عكس القيد المحاسبي
+        $this->transactionsService->reverse($purchase);
+
+        $purchase->delete();
         return back()->with('success', 'تم حذف الفاتورة بنجاح.');
     }
 
@@ -216,8 +279,8 @@ class PurchasesController extends Controller
                 if (!$warehouse) { $errors[] = "السطر {$rowNum}: المستودع «{$warehouseName}» غير موجود."; continue; }
                 if (!$product)   { $errors[] = "السطر {$rowNum}: المنتج «{$productSku}» غير موجود.";      continue; }
 
-                $paymentMap = ['نقدي' => 'cash', 'آجل' => 'credit', 'أقساط' => 'installments'];
-                $paymentType = $paymentMap[$paymentType] ?? (in_array($paymentType, ['cash', 'credit', 'installments']) ? $paymentType : 'cash');
+                $paymentMap = ['نقدي' => 'cash', 'آجل' => 'credit', 'أقساط' => 'installments', 'محفظة الكترونيه' => 'wallet', 'تحويل بنكي اونلاين' => 'bank_online', 'تحويل بنكي مباشر' => 'bank_direct', 'شيك' => 'check'];
+                $paymentType = $paymentMap[$paymentType] ?? (in_array($paymentType, ['cash', 'credit', 'installments', 'wallet', 'bank_online', 'bank_direct', 'check']) ? $paymentType : 'cash');
 
                 $qty      = (float) $quantity;
                 $cost     = (float) $unitCost;
@@ -288,7 +351,7 @@ class PurchasesController extends Controller
     public function ajaxProducts(Request $request)
     {
         $search = $request->search;
-        $rows   = Product::select('id', 'name', 'sku')
+        $rows   = Product::select('id', 'name', 'sku', 'purchase_price', 'tax_rate')
             ->when($search, fn($q) => $q->where('name', 'like', "%{$search}%")
                 ->orWhere('sku', 'like', "%{$search}%"))
             ->where('is_active', true)
@@ -296,7 +359,12 @@ class PurchasesController extends Controller
             ->paginate(20);
 
         return response()->json([
-            'results'    => $rows->map(fn($p) => ['id' => $p->id, 'text' => "{$p->name} ({$p->sku})"]),
+            'results'    => $rows->map(fn($p) => [
+                'id'             => $p->id,
+                'text'           => "{$p->name} ({$p->sku})",
+                'purchase_price' => \App\Helpers\Helper::resolvePurchasePrice($p->id, null),
+                'tax_rate'       => (float)$p->tax_rate,
+            ]),
             'pagination' => ['more' => $rows->hasMorePages()],
         ]);
     }
@@ -306,17 +374,69 @@ class PurchasesController extends Controller
     // -------------------------------------------------------
     public function ajaxVariants(Request $request)
     {
-        $variants = ProductVariant::where('product_id', $request->product_id)
+        $productId = (int)$request->product_id;
+        $variants  = ProductVariant::where('product_id', $productId)
             ->where('is_active', true)
-            ->select('id', 'sku', 'attributes', 'purchase_price')
+            ->select('id', 'product_id', 'sku', 'attributes', 'purchase_price', 'average_cost')
             ->get()
             ->map(fn($v) => [
                 'id'             => $v->id,
                 'text'           => $v->sku . (is_array($v->attributes) ? ' — ' . implode(', ', $v->attributes) : ''),
-                'purchase_price' => (float) $v->purchase_price,
+                'purchase_price' => \App\Helpers\Helper::resolvePurchasePrice($productId, $v->id),
             ]);
 
         return response()->json(['results' => $variants]);
+    }
+
+    // -------------------------------------------------------
+    // AJAX: resolve purchase price (average_cost priority)
+    // -------------------------------------------------------
+    public function ajaxPrice(Request $request)
+    {
+        $productId = (int) $request->product_id;
+        $variantId = $request->filled('variant_id') ? (int) $request->variant_id : null;
+
+        $variant = $variantId
+            ? ProductVariant::where('id', $variantId)->select('id', 'average_cost', 'purchase_price')->first()
+            : null;
+
+        return response()->json([
+            'purchase_price'          => \App\Helpers\Helper::resolvePurchasePrice($productId, $variantId),
+            'variant_average_cost'    => $variant ? (float)$variant->average_cost    : null,
+            'variant_purchase_price'  => $variant ? (float)$variant->purchase_price  : null,
+            'product_average_cost'    => (float)(Product::where('id', $productId)->value('average_cost')    ?? 0),
+            'product_purchase_price'  => (float)(Product::where('id', $productId)->value('purchase_price') ?? 0),
+        ]);
+    }
+
+    // -------------------------------------------------------
+    // AJAX: get unit conversions for a product/variant
+    // -------------------------------------------------------
+    public function ajaxUnitConversions(Request $request)
+    {
+        $productId = (int)$request->product_id;
+        $variantId = $request->filled('variant_id') ? (int)$request->variant_id : null;
+
+        $conversions = UnitConversion::where('product_id', $productId)
+            ->when(
+                $variantId,
+                fn($q) => $q->where(fn($q2) => $q2->where('variant_id', $variantId)->orWhereNull('variant_id')),
+                fn($q) => $q->whereNull('variant_id')
+            )
+            ->get(['id', 'base_unit', 'target_unit', 'conversion_rate', 'is_default', 'allow_fractions', 'decimal_places']);
+
+        return response()->json([
+            'results' => $conversions->map(fn($c) => [
+                'id'              => $c->id,
+                'text'            => $c->target_unit . ' (× ' . rtrim(rtrim((string)$c->conversion_rate, '0'), '.') . ' ' . $c->base_unit . ')',
+                'base_unit'       => $c->base_unit,
+                'target_unit'     => $c->target_unit,
+                'conversion_rate' => (float)$c->conversion_rate,
+                'is_default'      => (bool)$c->is_default,
+                'allow_fractions' => (bool)$c->allow_fractions,
+                'decimal_places'  => (int)$c->decimal_places,
+            ]),
+        ]);
     }
 
     // -------------------------------------------------------
@@ -360,38 +480,70 @@ class PurchasesController extends Controller
 
     private function syncItems(Purchase $purchase, array $items): void
     {
+        $pricingMode = \App\Helpers\Helper::pricingMode();
         foreach ($items as $item) {
             $qty      = (float) $item['quantity'];
             $cost     = (float) $item['unit_cost'];
             $disc     = (float) ($item['discount'] ?? 0);
             $taxRate  = (float) ($item['tax_rate'] ?? 0);
-            $rowTotal = round(($qty * $cost - $disc) * (1 + $taxRate / 100), 2);
+
+            if ($pricingMode === 'inclusive') {
+                // السعر شامل الضريبة: الإجمالي = qty * cost - disc
+                $rowTotal = round($qty * $cost - $disc, 2);
+            } else {
+                // السعر غير شامل الضريبة
+                $rowTotal = round(($qty * $cost - $disc) * (1 + $taxRate / 100), 2);
+            }
+
+            $unitConversionId = !empty($item['unit_conversion_id']) ? (int)$item['unit_conversion_id'] : null;
 
             PurchaseItem::create([
-                'purchase_id' => $purchase->id,
-                'product_id'  => $item['product_id'],
-                'variant_id'  => $item['variant_id'] ?: null,
-                'quantity'    => $qty,
-                'unit_cost'   => $cost,
-                'discount'    => $disc,
-                'tax_rate'    => $taxRate,
-                'total'       => $rowTotal,
+                'purchase_id'        => $purchase->id,
+                'product_id'         => $item['product_id'],
+                'variant_id'         => $item['variant_id'] ?: null,
+                'unit_conversion_id' => $unitConversionId,
+                'quantity'           => $qty,
+                'unit_cost'          => $cost,
+                'discount'           => $disc,
+                'tax_rate'           => $taxRate,
+                'total'              => $rowTotal,
             ]);
         }
     }
 
     private function recalcTotals(Purchase $purchase): void
     {
-        $items    = $purchase->items()->get();
-        $subtotal = $items->sum(fn($i) => (float)$i->quantity * (float)$i->unit_cost - (float)$i->discount);
-        $tax      = $items->sum(fn($i) => round(((float)$i->quantity * (float)$i->unit_cost - (float)$i->discount) * (float)$i->tax_rate / 100, 2));
-        $discount = $items->sum(fn($i) => (float)$i->discount);
+        $pricingMode = \App\Helpers\Helper::pricingMode();
+        $items       = $purchase->items()->get();
+        $discount    = $items->sum(fn($i) => (float)$i->discount);
 
-        $purchase->update([
-            'subtotal' => round($subtotal, 2),
-            'discount' => round($discount, 2),
-            'tax'      => round($tax, 2),
-            'total'    => round($subtotal + $tax, 2),
-        ]);
+        if ($pricingMode === 'inclusive') {
+            // استخراج الضريبة من السعر الشامل: tax = gross * rate / (100 + rate)
+            $grossSum = $items->sum(fn($i) => (float)$i->quantity * (float)$i->unit_cost - (float)$i->discount);
+            $tax      = $items->sum(fn($i) => round(
+                ((float)$i->quantity * (float)$i->unit_cost - (float)$i->discount)
+                    * (float)$i->tax_rate / (100 + (float)$i->tax_rate),
+                2
+            ));
+            $subtotal = round($grossSum - $tax, 2);
+
+            $purchase->update([
+                'subtotal' => $subtotal,
+                'discount' => round($discount, 2),
+                'tax'      => round($tax, 2),
+                'total'    => round($grossSum, 2),
+            ]);
+        } else {
+            $subtotal = $items->sum(fn($i) => (float)$i->quantity * (float)$i->unit_cost - (float)$i->discount);
+            $tax      = $items->sum(fn($i) => round(((float)$i->quantity * (float)$i->unit_cost - (float)$i->discount) * (float)$i->tax_rate / 100, 2));
+
+            $purchase->update([
+                'subtotal' => round($subtotal, 2),
+                'discount' => round($discount, 2),
+                'tax'      => round($tax, 2),
+                'total'    => round($subtotal + $tax, 2),
+            ]);
+        }
     }
+
 }

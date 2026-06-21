@@ -15,6 +15,14 @@ $(function () {
     var ajaxApplyOfferUrl = '{{ route("finance.orders.ajax.apply_offer") }}';
 
     /* --------------------------------------------------------
+       Pricing Mode:
+         inclusive = السعر المدخل يشمل الضريبة (تُستخرج الضريبة منه)
+         exclusive = السعر المدخل لا يشمل الضريبة (تُضاف الضريبة فوقه)
+    -------------------------------------------------------- */
+    var pricingMode    = '{{ $pricingMode ?? "exclusive" }}';
+    var defaultTaxRate = {{ \App\Helpers\Helper::defaultTaxRate() }};
+
+    /* --------------------------------------------------------
        Customer Select2
     -------------------------------------------------------- */
     $('#customer_select').select2({
@@ -189,7 +197,7 @@ $(function () {
        BUILD NEW ROW
     ========================================================= */
     function addEmptyRow() {
-        addRow(null, null, null, null, 0, 0, 0, 1);
+        addRow(null, null, null, null, 0, defaultTaxRate, 0, 1);
     }
 
     function addRow(productId, productText, variantId, variantText, price, taxRate, actualStock, qty) {
@@ -298,6 +306,7 @@ $(function () {
         var $unitSel = $row.find('.item-unit');
         $.get(ajaxUnitsUrl, { product_id: productId, variant_id: variantId || '' }, function (data) {
             $unitSel.find('option:not([value=""])').remove();
+            var autoSelected = false;
             if (data.results && data.results.length) {
                 $.each(data.results, function (i, u) {
                     var $opt = $('<option>', {
@@ -308,11 +317,17 @@ $(function () {
                     }).text(u.text);
                     if (selectedUnitId && u.id == selectedUnitId) {
                         $opt.attr('selected', true);
+                        autoSelected = true;
                     } else if (!selectedUnitId && u.is_default) {
                         $opt.attr('selected', true);
+                        autoSelected = true;
                     }
                     $unitSel.append($opt);
                 });
+            }
+            // Trigger change so the price updates when a unit is auto-selected
+            if (autoSelected) {
+                $unitSel.trigger('change');
             }
         });
     }
@@ -423,7 +438,15 @@ $(function () {
         var disc    = parseFloat($row.find('.item-disc').val())  || 0;
         var taxRate = parseFloat($row.find('.item-tax').val())   || 0;
         var base    = qty * price - disc;
-        $row.find('.item-total-cell').text((base + base * taxRate / 100).toFixed(2));
+        var total;
+        if (pricingMode === 'inclusive') {
+            // السعر شامل الضريبة: الإجمالي = base (لا تُضاف ضريبة إضافية)
+            total = base;
+        } else {
+            // السعر غير شامل: الإجمالي = base + ضريبة
+            total = base + base * taxRate / 100;
+        }
+        $row.find('.item-total-cell').text(total.toFixed(2));
     }
 
     function updateSummary() {
@@ -434,9 +457,17 @@ $(function () {
             var p    = parseFloat($r.find('.item-price').val()) || 0;
             var disc = parseFloat($r.find('.item-disc').val())  || 0;
             var tax  = parseFloat($r.find('.item-tax').val())   || 0;
-            subtotal  += qty * p - disc;
+            var gross = qty * p - disc;
             totalDisc += disc;
-            totalTax  += (qty * p - disc) * tax / 100;
+            if (pricingMode === 'inclusive') {
+                // الضريبة مُدرجة في السعر: tax = gross * rate / (100 + rate)
+                var lineTax = gross * tax / (100 + tax);
+                totalTax += lineTax;
+                subtotal += gross - lineTax; // السعر قبل الضريبة
+            } else {
+                subtotal  += gross;
+                totalTax  += gross * tax / 100;
+            }
         });
         var shipping      = parseFloat($('#shipping_cost').val()) || 0;
         var couponDisc    = parseFloat($('#coupon_discount_input').val()) || 0;

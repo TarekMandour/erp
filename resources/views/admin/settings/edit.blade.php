@@ -87,6 +87,12 @@
                                 {{trans('lang.seo')}}
                             </a>
                         </li>
+                        <li class="nav-item">
+                            <a class="nav-link text-dark text-active-primary pb-5" data-bs-toggle="tab" href="#finance_settings">
+                                <i class="las la-calculator text-primary fs-3"></i>
+                                إعدادات المحاسبة
+                            </a>
+                        </li>
                         <!--end:::Tab item-->
                     </ul>
                     <!--end:::Tabs-->
@@ -557,6 +563,62 @@
                                     </div>
                                 </div>
 
+                            </form>
+                            <!--end::Form-->
+                        </div>
+                        <div class="tab-pane fade" id="finance_settings" role="tabpanel">
+                            <!--begin::Form-->
+                            <form action="{{route('admin.settings.update')}}" method="POST" class="form">
+                                @csrf
+                                <div class="row fv-row mb-7">
+                                    <div class="col-md-3 text-md-end">
+                                        <label class="fs-6 fw-semibold form-label mt-3">
+                                            <span>طريقة تسعير المنتجات</span>
+                                        </label>
+                                    </div>
+                                    <div class="col-md-5">
+                                        <select name="pricing_mode" class="form-select form-select-solid">
+                                            <option value="exclusive" {{ ($data->pricing_mode ?? 'exclusive') === 'exclusive' ? 'selected' : '' }}>
+                                                السعر غير شامل الضريبة (Tax Exclusive)
+                                            </option>
+                                            <option value="inclusive" {{ ($data->pricing_mode ?? 'exclusive') === 'inclusive' ? 'selected' : '' }}>
+                                                السعر شامل الضريبة (Tax Inclusive)
+                                            </option>
+                                        </select>
+                                        <div class="form-text text-muted mt-2">
+                                            <strong>Exclusive:</strong> السعر المدخل للمنتج هو السعر قبل الضريبة، وتُضاف الضريبة فوقه عند الفاتورة.<br>
+                                            <strong>Inclusive:</strong> السعر المدخل للمنتج يشمل قيمة الضريبة، وتُستخرج الضريبة منه عند الفاتورة.
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="row fv-row mb-7">
+                                    <div class="col-md-3 text-md-end">
+                                        <label class="fs-6 fw-semibold form-label mt-3">
+                                            <span>نسبة الضريبة الافتراضية %</span>
+                                        </label>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <input type="number" name="default_tax_rate"
+                                               value="{{ $data->default_tax_rate ?? 15 }}"
+                                               class="form-control form-control-solid"
+                                               min="0" max="100" step="0.01"
+                                               placeholder="مثال: 15" />
+                                        <div class="form-text text-muted mt-1">
+                                            تُستخدم كقيمة افتراضية عند إنشاء منتج جديد أو إضافة بند في الفاتورة.
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="row py-5">
+                                    <div class="col-md-9 offset-md-3">
+                                        <div class="d-flex">
+                                            <button type="submit" data-kt-ecommerce-settings-type="submit" class="btn btn-primary">
+                                                <span class="indicator-label">{{trans('exam.save')}}</span>
+                                                <span class="indicator-progress">Please wait...
+                                                <span class="spinner-border spinner-border-sm align-middle ms-2"></span></span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
                             </form>
                             <!--end::Form-->
                         </div>

@@ -107,6 +107,7 @@
     </div>
 
     <div class="form-check form-check-custom form-check-primary form-check-solid mb-5">
+        <input type="hidden" name="is_default" value="0">
         <input class="form-check-input h-20px w-20px" type="checkbox" name="is_default" value="1" @if(isset($data) && $data->is_default == 1) checked @endif />
         <label class="form-check-label text-dark fw-bold" for="">
             هل النوع افتراضي ؟
@@ -114,6 +115,7 @@
     </div>
 
     <div class="form-check form-check-custom form-check-primary form-check-solid mb-5">
+        <input type="hidden" name="allow_fractions" value="0">
         <input class="form-check-input h-20px w-20px" type="checkbox" name="allow_fractions" value="1" @if(isset($data) && $data->allow_fractions == 1) checked @endif />
         <label class="form-check-label text-dark fw-bold" for="">
             هل مسموح الكسور ؟

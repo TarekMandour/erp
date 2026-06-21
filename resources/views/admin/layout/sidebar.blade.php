@@ -285,11 +285,11 @@
 
                 <div class="menu-item">
                     <!--begin:Menu link-->
-                    <a class="menu-link {{ request()->routeIs('finance.trans_account_trees.*') ? 'active' : '' }}" href="{{route('finance.trans_account_trees.index')}}">
+                    <a class="menu-link {{ request()->routeIs('finance.journal_entries.*') ? 'active' : '' }}" href="{{route('finance.journal_entries.index')}}">
                         <span class="menu-icon">
                             <i class="bi bi-journal-bookmark"></i>
                         </span>
-                        <span class="menu-title">قيود شجرة الحسابات </span>
+                        <span class="menu-title">القيود اليومية</span>
                         <span class="menu-arrow"></span>
                     </a>
                     <!--end:Menu link-->
@@ -326,6 +326,18 @@
                             <i class="bi bi-bank"></i>
                         </span>
                         <span class="menu-title">البنوك</span>
+                        <span class="menu-arrow"></span>
+                    </a>
+                    <!--end:Menu link-->
+                </div>
+
+                <div class="menu-item">
+                    <!--begin:Menu link-->
+                    <a class="menu-link {{ request()->routeIs('finance.posting_scenarios.*') ? 'active' : '' }}" href="{{route('finance.posting_scenarios.index')}}">
+                        <span class="menu-icon">
+                            <i class="bi bi-journal-bookmark"></i>
+                        </span>
+                        <span class="menu-title">سيناريو القيود </span>
                         <span class="menu-arrow"></span>
                     </a>
                     <!--end:Menu link-->

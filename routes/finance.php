@@ -169,15 +169,47 @@ Route::group(['middleware' => ['admin']], function () {
         Route::post('/update', 'AccountTreeController@update')->name('update');
     });
 
-    Route::name('trans_account_trees.')->prefix('trans-account-trees')->group(function () {
-        Route::get('/', 'TransAccountTreeController@index')->name('index');
-        Route::get('/export', 'TransAccountTreeController@export')->name('export');
-        Route::get('/show/{id}', 'TransAccountTreeController@show')->name('show');
-        Route::post('/delete', 'TransAccountTreeController@destroy')->name('delete');
-        Route::get('/create', 'TransAccountTreeController@create')->name('create');
-        Route::post('/store', 'TransAccountTreeController@store')->name('store');
-        Route::get('/edit/{id}', 'TransAccountTreeController@edit')->name('edit');
-        Route::post('/update', 'TransAccountTreeController@update')->name('update');
+    Route::name('journal_entries.')->prefix('journal-entries')->group(function () {
+        Route::get('/', 'JournalEntryController@index')->name('index');
+        Route::get('/export', 'JournalEntryController@export')->name('export');
+        Route::get('/show/{id}', 'JournalEntryController@show')->name('show');
+        Route::post('/delete', 'JournalEntryController@destroy')->name('delete');
+        Route::get('/create', 'JournalEntryController@create')->name('create');
+        Route::post('/store', 'JournalEntryController@store')->name('store');
+        Route::get('/edit/{id}', 'JournalEntryController@edit')->name('edit');
+        Route::post('/update', 'JournalEntryController@update')->name('update');
+    });
+
+    Route::name('cost_centers.')->prefix('cost-centers')->group(function () {
+        Route::get('/', 'CostCenterController@index')->name('index');
+        Route::get('/export', 'CostCenterController@export')->name('export');
+        Route::get('/show/{id}', 'CostCenterController@show')->name('show');
+        Route::post('/delete', 'CostCenterController@destroy')->name('delete');
+        Route::get('/create', 'CostCenterController@create')->name('create');
+        Route::post('/store', 'CostCenterController@store')->name('store');
+        Route::get('/edit/{id}', 'CostCenterController@edit')->name('edit');
+        Route::post('/update', 'CostCenterController@update')->name('update');
+    });
+
+    Route::name('posting_scenarios.')->prefix('posting-scenarios')->group(function () {
+        Route::get('/', 'PostingScenarioController@index')->name('index');
+        Route::get('/export', 'PostingScenarioController@export')->name('export');
+        Route::get('/show/{id}', 'PostingScenarioController@show')->name('show');
+        Route::post('/delete', 'PostingScenarioController@destroy')->name('delete');
+        Route::get('/create', 'PostingScenarioController@create')->name('create');
+        Route::post('/store', 'PostingScenarioController@store')->name('store');
+        Route::get('/edit/{id}', 'PostingScenarioController@edit')->name('edit');
+        Route::post('/update', 'PostingScenarioController@update')->name('update');
+    });
+
+    Route::name('posting_rule_variables.')->prefix('posting-rule-variables')->group(function () {
+        Route::get('/', 'PostingRuleVariableController@index')->name('index');
+        Route::get('/show/{id}', 'PostingRuleVariableController@show')->name('show');
+        Route::post('/delete', 'PostingRuleVariableController@destroy')->name('delete');
+        Route::get('/create', 'PostingRuleVariableController@create')->name('create');
+        Route::post('/store', 'PostingRuleVariableController@store')->name('store');
+        Route::get('/edit/{id}', 'PostingRuleVariableController@edit')->name('edit');
+        Route::post('/update', 'PostingRuleVariableController@update')->name('update');
     });
 
     Route::name('banks.')->prefix('banks')->group(function () {
@@ -276,8 +308,10 @@ Route::group(['middleware' => ['admin']], function () {
         Route::get('/adjust/{id}', 'InventoryController@adjust')->name('adjust-item');
         Route::get('/history/{id}', 'InventoryController@history')->name('history');
         Route::get('/transactions', 'InventoryController@transactions')->name('transactions');
+        Route::get('/ajax-products', 'InventoryController@ajaxProducts')->name('ajax.products');
         Route::get('/get-variants', 'InventoryController@getVariants')->name('get-variants');
         Route::get('/get-stock', 'InventoryController@getStock')->name('get-stock');
+        Route::get('/product/{id}', 'InventoryController@productReport')->name('product-report');
 
         Route::name('transfers.')->prefix('transfers')->group(function () {
             Route::get('/', 'InventoryTransferController@index')->name('index');
@@ -339,6 +373,8 @@ Route::group(['middleware' => ['admin']], function () {
         Route::get('/ajax-suppliers', 'PurchasesController@ajaxSuppliers')->name('ajax.suppliers');
         Route::get('/ajax-products', 'PurchasesController@ajaxProducts')->name('ajax.products');
         Route::get('/ajax-variants', 'PurchasesController@ajaxVariants')->name('ajax.variants');
+        Route::get('/ajax-units', 'PurchasesController@ajaxUnitConversions')->name('ajax.units');
+        Route::get('/ajax-price', 'PurchasesController@ajaxPrice')->name('ajax.price');
     });
 
     Route::name('orders.')->prefix('orders')->group(function () {

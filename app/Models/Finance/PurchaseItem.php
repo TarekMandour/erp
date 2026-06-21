@@ -10,6 +10,7 @@ class PurchaseItem extends Model
         'purchase_id',
         'product_id',
         'variant_id',
+        'unit_conversion_id',
         'quantity',
         'unit_cost',
         'discount',
@@ -38,5 +39,10 @@ class PurchaseItem extends Model
     public function variant()
     {
         return $this->belongsTo(ProductVariant::class);
+    }
+
+    public function unitConversion()
+    {
+        return $this->belongsTo(UnitConversion::class);
     }
 }

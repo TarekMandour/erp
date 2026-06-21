@@ -12,6 +12,7 @@ class SupplierWallet extends Model
     protected $fillable = [
         'supplier_id',
         'voucher_id',
+        'purchase_id',
         'date',
         'description',
         'debit',

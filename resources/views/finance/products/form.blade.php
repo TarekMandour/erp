@@ -36,6 +36,7 @@
             </select>
 
             <div class="form-check form-check-custom form-check-primary form-check-solid mt-2 mb-5">
+                <input type="hidden" name="is_active" value="0">
                 <input class="form-check-input h-20px w-20px" type="checkbox" name="is_active" value="1" @if(isset($data) && $data->is_active == 1) checked @endif />
                 <label class="form-check-label text-dark fw-bold" for="">
                     حالة المنتج ؟
@@ -43,6 +44,7 @@
             </div>
 
             <div class="form-check form-check-custom form-check-primary form-check-solid mb-5">
+                <input type="hidden" name="has_variants" value="0">
                 <input class="form-check-input h-20px w-20px" type="checkbox" name="has_variants" value="1" @if(isset($data) && $data->has_variants == 1) checked @endif />
                 <label class="form-check-label text-dark fw-bold" for="">
                     يوجد خصائص للمنتج ؟
@@ -50,6 +52,7 @@
             </div>
 
             <div class="form-check form-check-custom form-check-primary form-check-solid mb-5">
+                <input type="hidden" name="has_expiry" value="0">
                 <input class="form-check-input h-20px w-20px" type="checkbox" name="has_expiry" value="1" @if(isset($data) && $data->has_expiry == 1) checked @endif />
                 <label class="form-check-label text-dark fw-bold" for="">
                     يوجد تاريخ الصلاحية ؟
@@ -238,11 +241,27 @@
                 <div class="col-md-3 fv-row fv-plugins-icon-container">
                     <label class="form-label">سعر بيع الوحده</label>
                     <input type="number" class="form-control form-control-solid" name="selling_price" value="{{old('selling_price',$data->selling_price ?? 0)}}" step="0.01" min="0" placeholder="سعر بيع الوحدة"  />
+                    @if(isset($pricingMode) && $pricingMode === 'inclusive')
+                        <div class="form-text text-warning fw-semibold mt-1">
+                            <i class="ki-duotone ki-information-5 fs-6"><span class="path1"></span><span class="path2"></span><span class="path3"></span></i>
+                            السعر المدخل شامل الضريبة
+                        </div>
+                    @else
+                        <div class="form-text text-info fw-semibold mt-1">
+                            <i class="ki-duotone ki-information-5 fs-6"><span class="path1"></span><span class="path2"></span><span class="path3"></span></i>
+                            السعر المدخل غير شامل الضريبة وسيتم إضافة الضريبة عند البيع
+                        </div>
+                    @endif
                 </div>
 
                 <div class="col-md-3 fv-row fv-plugins-icon-container">
                     <label class="form-label">الضريبه %</label>
-                    <input type="number" class="form-control form-control-solid" name="tax_rate" value="{{old('tax_rate',$data->tax_rate ?? 15)}}" step="0.01" min="0" placeholder="الضريبه %"  />
+                    <input type="number" class="form-control form-control-solid" name="tax_rate"
+                           value="{{old('tax_rate', $data->tax_rate ?? \App\Helpers\Helper::defaultTaxRate())}}"
+                           step="0.01" min="0" placeholder="الضريبه %"  />
+                    <div class="form-text text-muted mt-1">
+                        القيمة الافتراضية للنظام: {{ \App\Helpers\Helper::defaultTaxRate() }}%
+                    </div>
                 </div>
 
                 <div class="col-md-3 fv-row fv-plugins-icon-container">

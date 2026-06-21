@@ -148,6 +148,17 @@
     {{-- ── Items table ────────────────────────────────────────── --}}
     <div class="mb-8">
         <h4 class="fw-bold text-gray-800 mb-4">تفاصيل المنتجات</h4>
+        @if($pricingMode === 'inclusive')
+        <div class="alert alert-warning py-2 px-4 mb-3 fs-7">
+            <i class="ki-duotone ki-information-5 fs-5 me-1"><span class="path1"></span><span class="path2"></span><span class="path3"></span></i>
+            <strong>السعر شامل الضريبة:</strong> الأسعار المدخلة تشمل قيمة الضريبة — يتم استخراجها تلقائياً.
+        </div>
+        @else
+        <div class="alert alert-info py-2 px-4 mb-3 fs-7">
+            <i class="ki-duotone ki-information-5 fs-5 me-1"><span class="path1"></span><span class="path2"></span><span class="path3"></span></i>
+            <strong>السعر غير شامل الضريبة:</strong> الضريبة مُضافة فوق سعر المنتج.
+        </div>
+        @endif
         <div class="table-responsive">
             <table class="table table-bordered table-hover align-middle fs-6">
                 <thead class="bg-light-dark">
@@ -157,6 +168,7 @@
                         <th>المتغير</th>
                         <th>الكمية</th>
                         <th>سعر الوحدة</th>
+                        <th>السعر قبل الضريبة</th>
                         <th>الخصم</th>
                         <th>ض%</th>
                         <th>الضريبة</th>
@@ -166,9 +178,22 @@
                 <tbody>
                     @foreach($data->items as $i => $item)
                     @php
-                        $base    = (float)$item->quantity * (float)$item->unit_price - (float)$item->discount;
-                        $taxAmt  = round($base * (float)$item->tax_rate / 100, 2);
-                        $rowTot  = $base + $taxAmt;
+                        $qty      = (float)$item->quantity;
+                        $price    = (float)$item->unit_price;
+                        $disc     = (float)$item->discount;
+                        $taxRate  = (float)$item->tax_rate;
+                        if ($pricingMode === 'inclusive') {
+                            // السعر قبل الضريبة = price / (1 + rate/100)
+                            $unitPriceBefore = $taxRate > 0 ? round($price / (1 + $taxRate / 100), 4) : $price;
+                            $gross           = $qty * $price - $disc;
+                            $taxAmt          = round($gross * $taxRate / (100 + $taxRate), 2);
+                            $rowTot          = $gross;
+                        } else {
+                            $unitPriceBefore = $price;
+                            $gross           = $qty * $price - $disc;
+                            $taxAmt          = round($gross * $taxRate / 100, 2);
+                            $rowTot          = $gross + $taxAmt;
+                        }
                     @endphp
                     <tr>
                         <td class="text-center text-gray-600">{{$i + 1}}</td>
@@ -179,10 +204,11 @@
                         <td class="text-center text-gray-700">
                             {{$item->variant ? $item->variant->sku : '—'}}
                         </td>
-                        <td class="text-center fw-bold">{{number_format((float)$item->quantity, 3)}}</td>
-                        <td class="text-center">{{number_format((float)$item->unit_price, 2)}}</td>
-                        <td class="text-center text-danger">{{number_format((float)$item->discount, 2)}}</td>
-                        <td class="text-center">{{number_format((float)$item->tax_rate, 2)}}%</td>
+                        <td class="text-center fw-bold">{{number_format($qty, 3)}}</td>
+                        <td class="text-center">{{number_format($price, 2)}}</td>
+                        <td class="text-center text-gray-600">{{number_format($unitPriceBefore, 2)}}</td>
+                        <td class="text-center text-danger">{{number_format($disc, 2)}}</td>
+                        <td class="text-center">{{number_format($taxRate, 2)}}%</td>
                         <td class="text-center text-warning">{{number_format($taxAmt, 2)}}</td>
                         <td class="text-center fw-bold text-success">{{number_format($rowTot, 2)}} ر.س</td>
                     </tr>

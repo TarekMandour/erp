@@ -20,10 +20,17 @@ use App\Models\Finance\Coupon;
 use App\Models\Finance\CouponUsage;
 use App\Models\Finance\Offer;
 use App\Http\Requests\Finance\OrderRequest;
+use App\Services\Finance\OrderService;
+use App\Services\Finance\TransactionsService;
 
 class OrdersController extends Controller
 {
     private string $route = 'finance.orders';
+
+    public function __construct(
+        private OrderService $orderService,
+        private TransactionsService $transactionsService,
+    ) {}
 
     // -------------------------------------------------------
     // Index — DataTables
@@ -93,7 +100,8 @@ class OrdersController extends Controller
     {
         $warehouses  = Warehouse::where('is_active', true)->select('id', 'name')->orderBy('name')->get();
         $orderNumber = Order::generateNumber();
-        return view('finance.orders.create', compact('warehouses', 'orderNumber'));
+        $pricingMode = \App\Helpers\Helper::pricingMode();
+        return view('finance.orders.create', compact('warehouses', 'orderNumber', 'pricingMode'));
     }
 
     // -------------------------------------------------------
@@ -107,13 +115,27 @@ class OrdersController extends Controller
             return back()->withInput()->withErrors(['items' => $stockError]);
         }
 
-        DB::transaction(function () use ($request) {
-            $order = Order::create($this->mapHeader($request));
-            $this->syncItems($order, $request->items);
-            $this->recalcTotals($order);
-            $this->recordCouponUsage($order, $request);
-            $this->recordOfferUsage($order, null);
-        });
+        $order = null;
+
+        $dispatcher = Order::getEventDispatcher();
+        Order::unsetEventDispatcher();
+
+        try {
+            DB::transaction(function () use ($request, &$order) {
+                $order = Order::create($this->mapHeader($request));
+                $this->syncItems($order, $request->items);
+                $this->recalcTotals($order);
+                $this->recordCouponUsage($order, $request);
+                $this->recordOfferUsage($order, null);
+            });
+        } finally {
+            Order::setEventDispatcher($dispatcher);
+        }
+
+        if ($order->status === 'confirmed') {
+            $this->transactionsService->process($order->fresh());
+            $this->orderService->apply($order->fresh(['items.unitConversion']));
+        }
 
         return redirect()->route($this->route . '.index')
             ->with('success', 'تم إضافة الطلب بنجاح.');
@@ -131,8 +153,9 @@ class OrdersController extends Controller
             'items.variant:id,product_id,sku,attributes',
         ])->findOrFail($id);
 
-        $settings = \App\Helpers\Helper::settings();
-        return view('finance.orders.show', compact('data', 'settings'));
+        $settings    = \App\Helpers\Helper::settings();
+        $pricingMode = \App\Helpers\Helper::pricingMode();
+        return view('finance.orders.show', compact('data', 'settings', 'pricingMode'));
     }
 
     // -------------------------------------------------------
@@ -149,7 +172,8 @@ class OrdersController extends Controller
         }
 
         $warehouses = Warehouse::where('is_active', true)->select('id', 'name')->orderBy('name')->get();
-        return view('finance.orders.edit', compact('data', 'warehouses'));
+        $pricingMode = \App\Helpers\Helper::pricingMode();
+        return view('finance.orders.edit', compact('data', 'warehouses', 'pricingMode'));
     }
 
     // -------------------------------------------------------
@@ -157,7 +181,7 @@ class OrdersController extends Controller
     // -------------------------------------------------------
     public function update(OrderRequest $request)
     {
-        $order = Order::findOrFail($request->id);
+        $order = Order::with('items.unitConversion')->findOrFail($request->id);
 
         if ($order->is_locked) {
             return back()->withErrors(['items' => 'لا يمكن تعديل طلب بهذه الحالة.']);
@@ -168,21 +192,45 @@ class OrdersController extends Controller
             return back()->withInput()->withErrors(['items' => $stockError]);
         }
 
-        DB::transaction(function () use ($request, $order) {
-            $oldCouponId = $order->coupon_id;
-            $oldOfferId  = $order->offer_id;
-            $order->update($this->mapHeader($request));
-            $order->items()->delete();
-            $this->syncItems($order, $request->items);
-            $this->recalcTotals($order);
-            // Remove old coupon usage if coupon changed, then record new one
-            if ($oldCouponId && $oldCouponId !== $order->coupon_id) {
-                CouponUsage::where('order_id', $order->id)->delete();
-                Coupon::where('id', $oldCouponId)->decrement('used_count');
-            }
-            $this->recordCouponUsage($order, $request);
-            $this->recordOfferUsage($order, $oldOfferId);
-        });
+        $wasConfirmed = $order->status === 'confirmed';
+        $isCancelled  = $request->status === 'cancelled';
+        $willConfirm  = $request->status === 'confirmed';
+
+        // عكس الآثار القديمة إذا كان الطلب مؤكداً
+        if ($wasConfirmed) {
+            $this->orderService->reverse($order);
+            $this->transactionsService->reverse($order);
+        }
+
+        $dispatcher = Order::getEventDispatcher();
+        Order::unsetEventDispatcher();
+
+        try {
+            DB::transaction(function () use ($request, $order, $isCancelled) {
+                $oldCouponId = $order->coupon_id;
+                $oldOfferId  = $order->offer_id;
+                $order->update($this->mapHeader($request));
+
+                if (! $isCancelled) {
+                    $order->items()->delete();
+                    $this->syncItems($order, $request->items);
+                    $this->recalcTotals($order);
+                    if ($oldCouponId && $oldCouponId !== $order->coupon_id) {
+                        CouponUsage::where('order_id', $order->id)->delete();
+                        Coupon::where('id', $oldCouponId)->decrement('used_count');
+                    }
+                    $this->recordCouponUsage($order, $request);
+                    $this->recordOfferUsage($order, $oldOfferId);
+                }
+            });
+        } finally {
+            Order::setEventDispatcher($dispatcher);
+        }
+
+        if ($willConfirm) {
+            $this->transactionsService->process($order->fresh());
+            $this->orderService->apply($order->fresh(['items.unitConversion']));
+        }
 
         return redirect()->route($this->route . '.index')
             ->with('success', 'تم تحديث الطلب بنجاح.');
@@ -193,10 +241,15 @@ class OrdersController extends Controller
     // -------------------------------------------------------
     public function destroy(Request $request)
     {
-        $order = Order::findOrFail($request->id);
+        $order = Order::with('items.unitConversion')->findOrFail($request->id);
 
         if ($order->is_locked) {
             return back()->with('error', 'لا يمكن حذف طلب بهذه الحالة.');
+        }
+
+        if ($order->status === 'confirmed') {
+            $this->orderService->reverse($order);
+            $this->transactionsService->reverse($order);
         }
 
         $order->delete();
@@ -513,11 +566,9 @@ class OrdersController extends Controller
             ->first();
 
         if ($variant && $variant->product?->is_active) {
-            $product      = $variant->product;
-            $productPrice   = (float)$product->selling_price;
-            $variantPrice   = $variant->selling_price !== null ? (float)$variant->selling_price : 0;
-            $fallback       = $productPrice > 0 ? $productPrice : $variantPrice;
-            $effectivePrice = $this->resolveVariantPrice($variant->id, $fallback, $request->filled('customer_id') ? (int)$request->customer_id : null);
+            $product        = $variant->product;
+            $customerId     = $request->filled('customer_id') ? (int)$request->customer_id : null;
+            $effectivePrice = \App\Helpers\Helper::resolveSellingPrice($product->id, $variant->id, $customerId);
 
             $stock = $warehouseId
                 ? (float)(InventoryItem::where('warehouse_id', $warehouseId)
@@ -559,8 +610,8 @@ class OrdersController extends Controller
                 ->value('quantity') ?? 0)
             : 0;
 
-        // Priority: product_variant_prices (no variant) > product.selling_price
-        $effectivePrice = $this->resolveProductPrice($product->id, (float)$product->selling_price, $request->filled('customer_id') ? (int)$request->customer_id : null);
+        // Priority: product_variant_prices > products.selling_price
+        $effectivePrice = \App\Helpers\Helper::resolveSellingPrice($product->id, null, $request->filled('customer_id') ? (int)$request->customer_id : null);
 
         return response()->json([
             'found'         => true,
@@ -615,9 +666,9 @@ class OrdersController extends Controller
                     ->whereNull('variant_id')
                     ->value('quantity') ?? 0);
             }
-            // Priority: product_variant_prices (no variant) > product.selling_price
+            // Priority: product_variant_prices > product_variants > products
             $customerId     = $request->filled('customer_id') ? (int)$request->customer_id : null;
-            $effectivePrice = $this->resolveProductPrice($p->id, (float)$p->selling_price, $customerId);
+            $effectivePrice = \App\Helpers\Helper::resolveSellingPrice($p->id, null, $customerId);
             return [
                 'id'            => $p->id,
                 'text'          => $p->name . ' (' . $p->sku . ')',
@@ -652,12 +703,9 @@ class OrdersController extends Controller
                         ->where('variant_id', $v->id)
                         ->value('quantity') ?? 0);
                 }
-                // Priority: product_variant_prices > product.selling_price > variant.selling_price
-                $productPrice   = (float)(Product::where('id', $v->product_id)->value('selling_price') ?? 0);
-                $variantPrice   = $v->selling_price !== null ? (float)$v->selling_price : 0;
-                $fallback       = $productPrice > 0 ? $productPrice : $variantPrice;
+                // Priority: product_variant_prices > product_variants > products
                 $customerId     = $request->filled('customer_id') ? (int)$request->customer_id : null;
-                $effectivePrice = $this->resolveVariantPrice($v->id, $fallback, $customerId);
+                $effectivePrice = \App\Helpers\Helper::resolveSellingPrice($v->product_id, $v->id, $customerId);
 
                 $label = $v->sku;
                 if (is_array($v->attributes) && count($v->attributes)) {
@@ -709,95 +757,29 @@ class OrdersController extends Controller
     // -------------------------------------------------------
 
     /**
-     * Resolve effective selling price for a product (no variant).
-     * Priority: customer-specific product_variant_prices > general product_variant_prices > fallback
+     * @deprecated Use \App\Helpers\Helper::resolveSellingPrice() instead.
      */
     private function resolveProductPrice(int $productId, float $fallback, ?int $customerId = null): float
     {
-        $today = now()->toDateString();
-
-        $base = ProductVariantPrice::where('product_id', $productId)
-            ->whereNull('variant_id')
-            ->where('is_active', true)
-            ->where(fn($q) => $q->whereNull('valid_from')->orWhere('valid_from', '<=', $today))
-            ->where(fn($q) => $q->whereNull('valid_to')->orWhere('valid_to', '>=', $today));
-
-        // Try customer-specific price first
-        if ($customerId) {
-            $special = (clone $base)
-                ->where(fn($q) => $q
-                    ->where('customer_id', $customerId)
-                    ->orWhereJsonContains('customer_ids', $customerId)
-                )
-                ->orderByDesc('priority')
-                ->first();
-
-            if ($special) {
-                return $this->extractPrice($special, $today);
-            }
-        }
-
-        // Fall back to general (no customer restriction) price
-        $special = (clone $base)
-            ->whereNull('customer_id')
-            ->where(fn($q) => $q->whereNull('customer_ids')->orWhere('customer_ids', '[]'))
-            ->whereNull('customer_group_id')
-            ->orderByDesc('priority')
-            ->first();
-
-        return $special ? $this->extractPrice($special, $today) : $fallback;
+        return \App\Helpers\Helper::resolveSellingPrice($productId, null, $customerId);
     }
 
     /**
-     * Resolve effective selling price for a variant.
-     * Priority: customer-specific product_variant_prices > general product_variant_prices > fallback
+     * @deprecated Use \App\Helpers\Helper::resolveSellingPrice() instead.
      */
     private function resolveVariantPrice(int $variantId, float $fallback, ?int $customerId = null): float
     {
-        $today = now()->toDateString();
-
-        $base = ProductVariantPrice::where('variant_id', $variantId)
-            ->where('is_active', true)
-            ->where(fn($q) => $q->whereNull('valid_from')->orWhere('valid_from', '<=', $today))
-            ->where(fn($q) => $q->whereNull('valid_to')->orWhere('valid_to', '>=', $today));
-
-        // Try customer-specific price first
-        if ($customerId) {
-            $special = (clone $base)
-                ->where(fn($q) => $q
-                    ->where('customer_id', $customerId)
-                    ->orWhereJsonContains('customer_ids', $customerId)
-                )
-                ->orderByDesc('priority')
-                ->first();
-
-            if ($special) {
-                return $this->extractPrice($special, $today);
-            }
-        }
-
-        // Fall back to general (no customer restriction) price
-        $special = (clone $base)
-            ->whereNull('customer_id')
-            ->where(fn($q) => $q->whereNull('customer_ids')->orWhere('customer_ids', '[]'))
-            ->whereNull('customer_group_id')
-            ->orderByDesc('priority')
-            ->first();
-
-        return $special ? $this->extractPrice($special, $today) : $fallback;
+        // Retrieve product_id from the variant to delegate to Helper
+        $productId = \App\Models\Finance\ProductVariant::where('id', $variantId)->value('product_id');
+        return \App\Helpers\Helper::resolveSellingPrice((int)$productId, $variantId, $customerId);
     }
 
     /**
-     * Extract price or sale_price from a ProductVariantPrice record.
+     * @deprecated Use \App\Helpers\Helper::extractPvpPrice() instead.
      */
     private function extractPrice(ProductVariantPrice $record, string $today): float
     {
-        if ($record->sale_price !== null
-            && (!$record->sale_start || $record->sale_start <= $today)
-            && (!$record->sale_end   || $record->sale_end   >= $today)) {
-            return (float)$record->sale_price;
-        }
-        return (float)$record->price;
+        return \App\Helpers\Helper::extractPvpPrice($record, $today);
     }
 
     /**
@@ -836,6 +818,24 @@ class OrdersController extends Controller
      */
     private function checkStock(array $items, int $warehouseId, ?int $excludeOrderId = null): ?string
     {
+        // When updating a confirmed order, its quantities are already deducted from inventory.
+        // Add them back per product/variant so the check is based on effective available stock.
+        $reservedQtys = [];
+        if ($excludeOrderId) {
+            $existingOrder = Order::find($excludeOrderId);
+            if ($existingOrder && $existingOrder->status === 'confirmed') {
+                $existingItems = OrderItem::where('order_id', $excludeOrderId)->get();
+                foreach ($existingItems as $ei) {
+                    $rate = 1;
+                    if ($ei->unit_conversion_id) {
+                        $rate = (float)(UnitConversion::find($ei->unit_conversion_id)?->conversion_rate ?? 1);
+                    }
+                    $key = $ei->product_id . '_' . ($ei->variant_id ?? 'null');
+                    $reservedQtys[$key] = ($reservedQtys[$key] ?? 0) + round((float)$ei->quantity * $rate, 6);
+                }
+            }
+        }
+
         $errors = [];
 
         foreach ($items as $idx => $item) {
@@ -856,6 +856,10 @@ class OrdersController extends Controller
                     fn($q) => $q->where('variant_id', $variantId),
                     fn($q) => $q->whereNull('variant_id'))
                 ->value('quantity') ?? 0);
+
+            // Add back this order's previously reserved quantity (effective available stock)
+            $key   = $productId . '_' . ($variantId ?? 'null');
+            $stock += ($reservedQtys[$key] ?? 0);
 
             if ($qty > $stock) {
                 $productName = Product::find($productId)?->name ?? "#$productId";
@@ -889,13 +893,21 @@ class OrdersController extends Controller
 
     private function syncItems(Order $order, array $items): void
     {
+        $pricingMode = \App\Helpers\Helper::pricingMode();
         foreach ($items as $item) {
             $qty              = (float)$item['quantity'];
             $price            = (float)$item['unit_price'];
             $disc             = (float)($item['discount'] ?? 0);
             $taxRate          = (float)($item['tax_rate'] ?? 0);
             $unitConversionId = !empty($item['unit_conversion_id']) ? (int)$item['unit_conversion_id'] : null;
-            $rowTotal         = round(($qty * $price - $disc) * (1 + $taxRate / 100), 2);
+
+            if ($pricingMode === 'inclusive') {
+                // السعر شامل الضريبة: الإجمالي = qty * price - disc (بدون إضافة ضريبة)
+                $rowTotal = round($qty * $price - $disc, 2);
+            } else {
+                // السعر غير شامل الضريبة: الإجمالي = (qty * price - disc) * (1 + taxRate/100)
+                $rowTotal = round(($qty * $price - $disc) * (1 + $taxRate / 100), 2);
+            }
 
             OrderItem::create([
                 'order_id'           => $order->id,
@@ -913,17 +925,39 @@ class OrdersController extends Controller
 
     private function recalcTotals(Order $order): void
     {
-        $items    = $order->items()->get();
-        $subtotal = $items->sum(fn($i) => (float)$i->quantity * (float)$i->unit_price - (float)$i->discount);
-        $tax      = $items->sum(fn($i) => round(((float)$i->quantity * (float)$i->unit_price - (float)$i->discount) * (float)$i->tax_rate / 100, 2));
-        $discount = $items->sum(fn($i) => (float)$i->discount);
+        $pricingMode = \App\Helpers\Helper::pricingMode();
+        $items       = $order->items()->get();
+        $discount    = $items->sum(fn($i) => (float)$i->discount);
 
-        $order->update([
-            'subtotal'        => round($subtotal, 2),
-            'discount'        => round($discount, 2),
-            'tax'             => round($tax, 2),
-            'total'           => round($subtotal + $tax + (float)$order->shipping_cost - (float)$order->coupon_discount - (float)$order->offer_discount, 2),
-        ]);
+        if ($pricingMode === 'inclusive') {
+            // السعر شامل الضريبة: استخراج الضريبة من السعر
+            // tax = gross * rate / (100 + rate)
+            $grossSum = $items->sum(fn($i) => (float)$i->quantity * (float)$i->unit_price - (float)$i->discount);
+            $tax      = $items->sum(fn($i) => round(
+                ((float)$i->quantity * (float)$i->unit_price - (float)$i->discount)
+                    * (float)$i->tax_rate / (100 + (float)$i->tax_rate),
+                2
+            ));
+            $subtotal = round($grossSum - $tax, 2);
+
+            $order->update([
+                'subtotal'        => $subtotal,
+                'discount'        => round($discount, 2),
+                'tax'             => round($tax, 2),
+                'total'           => round($grossSum + (float)$order->shipping_cost - (float)$order->coupon_discount - (float)$order->offer_discount, 2),
+            ]);
+        } else {
+            // السعر غير شامل الضريبة: إضافة الضريبة فوق السعر
+            $subtotal = $items->sum(fn($i) => (float)$i->quantity * (float)$i->unit_price - (float)$i->discount);
+            $tax      = $items->sum(fn($i) => round(((float)$i->quantity * (float)$i->unit_price - (float)$i->discount) * (float)$i->tax_rate / 100, 2));
+
+            $order->update([
+                'subtotal'        => round($subtotal, 2),
+                'discount'        => round($discount, 2),
+                'tax'             => round($tax, 2),
+                'total'           => round($subtotal + $tax + (float)$order->shipping_cost - (float)$order->coupon_discount - (float)$order->offer_discount, 2),
+            ]);
+        }
     }
 
     /**

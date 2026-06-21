@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Yajra\DataTables\Facades\DataTables;
 use Rap2hpoutre\FastExcel\FastExcel;
+use App\Models\Finance\AccountTree;
 use App\Models\Finance\BankAccount;
 use App\Models\Finance\Bank;
 use App\Http\Requests\Finance\BankAccountRequest;
@@ -63,7 +64,8 @@ class BankAccountsController extends Controller
     public function create()
     {
         $banks = Bank::orderBy('name')->get();
-        return view($this->viewPath . '.create', compact('banks'));
+        $accounts    = AccountTree::where('is_active', true)->orderBy('code')->get();
+        return view($this->viewPath . '.create', compact('banks', 'accounts'));
     }
 
     public function store(BankAccountRequest $request)
@@ -76,7 +78,8 @@ class BankAccountsController extends Controller
     {
         $data  = $this->objectModel::findOrFail($id);
         $banks = Bank::orderBy('name')->get();
-        return view($this->viewPath . '.edit', compact('data', 'banks'));
+        $accounts    = AccountTree::where('is_active', true)->orderBy('code')->get();
+        return view($this->viewPath . '.edit', compact('data', 'banks', 'accounts'));
     }
 
     public function update(BankAccountRequest $request)

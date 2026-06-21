@@ -40,9 +40,9 @@ class ProductVariant extends Model
         return $this->belongsTo(Product::class);
     }
     
-    public function inventoryLots()
+    public function inventoryStocks()
     {
-        return $this->hasMany(InventoryLot::class);
+        return $this->hasMany(InventoryItem::class, 'product_id', 'id');
     }
     
     public function orderItems()
