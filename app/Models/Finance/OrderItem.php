@@ -13,6 +13,7 @@ class OrderItem extends Model
         'unit_conversion_id',
         'quantity',
         'unit_price',
+        'unit_cost',
         'discount',
         'tax_rate',
         'total',
@@ -21,6 +22,7 @@ class OrderItem extends Model
     protected $casts = [
         'quantity'   => 'decimal:3',
         'unit_price' => 'decimal:2',
+        'unit_cost'  => 'decimal:4',
         'discount'   => 'decimal:2',
         'tax_rate'   => 'decimal:2',
         'total'      => 'decimal:2',

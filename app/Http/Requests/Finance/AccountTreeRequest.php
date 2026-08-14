@@ -19,6 +19,7 @@ class AccountTreeRequest extends FormRequest
             'name'      => 'required|string|max:255',
             'code'      => 'required|string|max:100|unique:account_trees,code,' . $id,
             'parent_id' => 'nullable|exists:account_trees,id',
+            'account_type' => 'nullable|in:debit,credit',
             'type'      => 'required|in:asset,liability,equity,revenue,expense',
         ];
     }

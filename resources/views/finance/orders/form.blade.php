@@ -171,6 +171,7 @@
                             <i class="ki-duotone ki-package fs-5 text-info" title="المتاح"><span class="path1"></span><span class="path2"></span><span class="path3"></span></i>
                         </th>
                         <th class="w-120px">سعر الوحدة</th>
+                        <th class="w-110px">تكلفة الوحدة</th>
                         <th class="w-100px">الخصم</th>
                         <th class="w-80px">ض%</th>
                         <th class="w-120px text-end">الإجمالي</th>
@@ -206,6 +207,9 @@
                         <td><input type="number" class="form-control form-control-solid form-control-sm item-price"
                                    name="items[0][unit_price]" value="0.00" min="0" step="0.01"
                                    data-base-price="0"></td>
+                        <td><input type="number" class="form-control form-control-solid form-control-sm item-unit-cost"
+                                   name="items[0][unit_cost]" value="0.00" min="0" step="0.0001"
+                                   placeholder="0.00" readonly></td>
                         <td><input type="number" class="form-control form-control-solid form-control-sm item-disc"
                                    name="items[0][discount]" value="0.00" min="0" step="0.01"></td>
                         <td><input type="number" class="form-control form-control-solid form-control-sm item-tax"
@@ -266,6 +270,10 @@
                                        name="items[{{$loop->index}}][unit_price]"
                                        value="{{$item->unit_price}}" min="0" step="0.01"
                                        data-base-price="{{ $item->unitConversion ? round((float)$item->unit_price * (float)$item->unitConversion->conversion_rate, 6) : (float)$item->unit_price }}"></td>
+                            <td><input type="number" class="form-control form-control-solid form-control-sm item-unit-cost"
+                                       name="items[{{$loop->index}}][unit_cost]"
+                                       value="{{$item->unit_cost}}" min="0" step="0.0001"
+                                       placeholder="0.00" readonly></td>
                             <td><input type="number" class="form-control form-control-solid form-control-sm item-disc"
                                        name="items[{{$loop->index}}][discount]"
                                        value="{{$item->discount}}" min="0" step="0.01"></td>

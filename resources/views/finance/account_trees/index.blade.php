@@ -95,6 +95,7 @@
             </div>
             <div class="card-toolbar">
                 <div class="d-flex justify-content-end" data-kt-user-table-toolbar="base">
+                    <a href="{{route($route.'.recalculate')}}" class="btn btn-icon btn-info me-2"><i class="bi bi-calculator fs-4"></i></a>
                     <a href="javascript:;" class="btn btn-icon btn-success me-2" id="btn_export" data-token="{{ csrf_token() }}"><i class="bi bi-file-earmark-arrow-down-fill fs-4"></i></a>
                     <a href="javascript:;" class="btn btn-icon btn-danger me-2" id="btn_delete" data-token="{{ csrf_token() }}"><i class="bi bi-trash-fill fs-4"></i></a>
                 </div>

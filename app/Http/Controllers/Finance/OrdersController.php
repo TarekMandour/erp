@@ -562,7 +562,7 @@ class OrdersController extends Controller
         // Check variant SKU first (barcode may map to a variant)
         $variant = ProductVariant::where('sku', $code)
             ->where('is_active', true)
-            ->with('product:id,name,sku,selling_price,tax_rate,is_active')
+            ->with('product:id,name,sku,selling_price,tax_rate,is_active,average_cost,cost_price')
             ->first();
 
         if ($variant && $variant->product?->is_active) {
@@ -590,6 +590,7 @@ class OrdersController extends Controller
                 'variant_text'  => $variantLabel,
                 'selling_price' => $effectivePrice,
                 'tax_rate'      => (float)$product->tax_rate,
+                'average_cost'  => (float)$variant->average_cost ?: (float)$variant->cost_price,
                 'stock'         => $stock,
             ]);
         }
@@ -621,6 +622,7 @@ class OrdersController extends Controller
             'variant_text'  => null,
             'selling_price' => $effectivePrice,
             'tax_rate'      => (float)$product->tax_rate,
+            'average_cost'  => (float)$product->average_cost ?: (float)$product->cost_price,
             'stock'         => $stock,
         ]);
     }
@@ -651,7 +653,7 @@ class OrdersController extends Controller
         $search      = $request->search;
         $warehouseId = $request->warehouse_id;
 
-        $rows = Product::select('products.id', 'products.name', 'products.sku', 'products.selling_price', 'products.tax_rate')
+        $rows = Product::select('products.id', 'products.name', 'products.sku', 'products.selling_price', 'products.tax_rate', 'products.average_cost', 'products.cost_price')
             ->when($search, fn($q) => $q->where('products.name', 'like', "%{$search}%")
                 ->orWhere('products.sku', 'like', "%{$search}%"))
             ->where('products.is_active', true)
@@ -674,6 +676,7 @@ class OrdersController extends Controller
                 'text'          => $p->name . ' (' . $p->sku . ')',
                 'selling_price' => $effectivePrice,
                 'tax_rate'      => (float)$p->tax_rate,
+                'average_cost'  => (float)$p->average_cost ?: (float)$p->cost_price,
                 'stock'         => $stock,
             ];
         });
@@ -693,7 +696,7 @@ class OrdersController extends Controller
 
         $variants = ProductVariant::where('product_id', $request->product_id)
             ->where('is_active', true)
-            ->select('id', 'product_id', 'sku', 'attributes', 'selling_price')
+            ->select('id', 'product_id', 'sku', 'attributes', 'selling_price', 'average_cost', 'cost_price')
             ->get()
             ->map(function ($v) use ($warehouseId, $request) {
                 $stock = 0;
@@ -715,6 +718,7 @@ class OrdersController extends Controller
                     'id'            => $v->id,
                     'text'          => $label,
                     'selling_price' => $effectivePrice,
+                    'average_cost'  => (float)$v->average_cost ?: (float)$v->cost_price,
                     'stock'         => $stock,
                 ];
             });
@@ -916,6 +920,7 @@ class OrdersController extends Controller
                 'unit_conversion_id' => $unitConversionId,
                 'quantity'           => $qty,
                 'unit_price'         => $price,
+                'unit_cost'          => (float)($item['unit_cost'] ?? 0),
                 'discount'           => $disc,
                 'tax_rate'           => $taxRate,
                 'total'              => $rowTotal,

@@ -7,6 +7,7 @@
     body > *:not(#order-invoice-wrapper) { display: none !important; }
     #order-invoice-wrapper { display: block !important; padding: 0 !important; margin: 0 !important; }
     #kt_header, #kt_toolbar, #kt_footer, #kt_aside, .no-print { display: none !important; }
+    th.no-print, td.no-print { display: none !important; }
     #order-invoice { padding: 20px; }
     .page-break { page-break-before: always; }
 }
@@ -168,6 +169,7 @@
                         <th>المتغير</th>
                         <th>الكمية</th>
                         <th>سعر الوحدة</th>
+                        <th class="no-print">تكلفة الوحدة</th>
                         <th>السعر قبل الضريبة</th>
                         <th>الخصم</th>
                         <th>ض%</th>
@@ -206,6 +208,7 @@
                         </td>
                         <td class="text-center fw-bold">{{number_format($qty, 3)}}</td>
                         <td class="text-center">{{number_format($price, 2)}}</td>
+                        <td class="text-center no-print">{{number_format((float)$item->unit_cost, 4)}}</td>
                         <td class="text-center text-gray-600">{{number_format($unitPriceBefore, 2)}}</td>
                         <td class="text-center text-danger">{{number_format($disc, 2)}}</td>
                         <td class="text-center">{{number_format($taxRate, 2)}}%</td>

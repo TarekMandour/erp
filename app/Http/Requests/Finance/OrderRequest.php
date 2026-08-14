@@ -29,6 +29,7 @@ class OrderRequest extends FormRequest
             'items.*.variant_id'   => 'nullable|exists:product_variants,id',
             'items.*.quantity'     => 'required|numeric|min:0.001',
             'items.*.unit_price'   => 'required|numeric|min:0',
+            'items.*.unit_cost'    => 'nullable|numeric|min:0',
             'items.*.discount'     => 'nullable|numeric|min:0',
             'items.*.tax_rate'     => 'nullable|numeric|min:0|max:100',
         ];

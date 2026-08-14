@@ -176,6 +176,7 @@ $(function () {
 
         $row.find('.item-price').val(parseFloat(res.selling_price).toFixed(2)).data('base-price', parseFloat(res.selling_price) || 0);
         $row.find('.item-tax').val(parseFloat(res.tax_rate).toFixed(2));
+        $row.find('.item-unit-cost').val(parseFloat(res.average_cost || 0).toFixed(4));
         $row.find('.item-qty').val('1.000');
 
         // Stock badge
@@ -242,6 +243,11 @@ $(function () {
                     'data-base-price': parseFloat(price || 0) })
             ),
             $('<td>').append(
+                $('<input>').attr({ type: 'number', class: 'form-control form-control-solid form-control-sm item-unit-cost',
+                    name: 'items[' + idx + '][unit_cost]', value: '0.00', min: '0', step: '0.0001',
+                    placeholder: '0.00', readonly: true })
+            ),
+            $('<td>').append(
                 $('<input>').attr({ type: 'number', class: 'form-control form-control-solid form-control-sm item-disc',
                     name: 'items[' + idx + '][discount]', value: '0.00', min: '0', step: '0.01' })
             ),
@@ -290,6 +296,7 @@ $(function () {
             var basePrice = parseFloat(item.selling_price || 0);
             $r.find('.item-price').val(basePrice.toFixed(2)).data('base-price', basePrice);
             $r.find('.item-tax').val(parseFloat(item.tax_rate || 0).toFixed(2));
+            $r.find('.item-unit-cost').val(parseFloat(item.average_cost || 0).toFixed(4));
             fetchAndSetRowStock($r, item.id, null, getWarehouseId());
             loadVariantsForRow($r, item.id, getWarehouseId(), null);
             loadUnitsForRow($r, item.id, null, null);
@@ -342,7 +349,7 @@ $(function () {
             $varSel.find('option:not([value=""])').remove();
             if (data.results && data.results.length) {
                 $.each(data.results, function (i, v) {
-                    var $opt = $('<option>', { value: v.id, 'data-price': v.selling_price, 'data-stock': v.stock }).text(v.text);
+                    var $opt = $('<option>', { value: v.id, 'data-price': v.selling_price, 'data-stock': v.stock, 'data-average-cost': v.average_cost }).text(v.text);
                     if (selectedVariantId && v.id == selectedVariantId) $opt.attr('selected', true);
                     $varSel.append($opt);
                 });
@@ -360,6 +367,9 @@ $(function () {
         if ($opt.val() && $opt.data('price') !== undefined) {
             var basePrice = parseFloat($opt.data('price'));
             $row.find('.item-price').val(basePrice.toFixed(2)).data('base-price', basePrice);
+        }
+        if ($opt.val() && $opt.data('average-cost') !== undefined) {
+            $row.find('.item-unit-cost').val(parseFloat($opt.data('average-cost') || 0).toFixed(4));
         }
         fetchAndSetRowStock($row, productId, variantId, getWarehouseId());
         loadUnitsForRow($row, productId, variantId, null);

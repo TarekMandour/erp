@@ -8,6 +8,7 @@ use Yajra\DataTables\Facades\DataTables;
 use Rap2hpoutre\FastExcel\FastExcel;
 use App\Models\Finance\AccountTree;
 use App\Http\Requests\Finance\AccountTreeRequest;
+use Illuminate\Support\Facades\DB;
 
 class AccountTreeController extends Controller
 {
@@ -72,7 +73,7 @@ class AccountTreeController extends Controller
                          . ($labels[$row->type] ?? $row->type) . '</span>';
                 })
                 ->addColumn('balance', function ($row) {
-                    $class = $row->balance >= 0 ? 'text-success' : 'text-danger';
+                    $class = $row->account_type === 'debit' ? 'text-success' : 'text-danger';
                     return '<strong class="' . $class . '">' . number_format($row->balance, 2) . '</strong>';
                 })
                 ->addColumn('is_active', function ($row) {
@@ -178,4 +179,62 @@ class AccountTreeController extends Controller
 
         return (new FastExcel($data->orderBy('code')->get()))->download('account_trees.csv');
     }
+
+    public function recalculate()
+    {
+        
+        foreach ($this->objectModel::whereHas('children')->get() as $account) {
+            DB::transaction(function () use ($account) {
+
+                if (!$account instanceof AccountTree) {
+                    $account = AccountTree::findOrFail($account);
+                }
+
+                $this->recalculateAccount($account);
+            });
+        }
+
+        return redirect()->route($this->route . '.index')
+            ->with('success', 'تم تحديث الحسابات بنجاح');
+        
+    }
+
+
+    protected function recalculateAccount(AccountTree $account): float
+    {
+        $children = $account->children()->get();
+
+        // إذا كان الحساب أب
+        if ($children->isNotEmpty()) {
+
+            $totalDebit = 0;
+            $totalCredit = 0;
+
+            foreach ($children as $child) {
+
+                // احسب الابن أولاً
+                $this->recalculateAccount($child);
+
+                $totalDebit += (float) $child->total_debit;
+                $totalCredit += (float) $child->total_credit;
+            }
+
+            $account->total_debit = $totalDebit;
+            $account->total_credit = $totalCredit;
+        }
+
+        // حساب الرصيد حسب طبيعة الحساب
+        if ($account->account_type === 'debit') {
+            $balance = $account->total_debit - $account->total_credit;
+        } else {
+            $balance = $account->total_credit - $account->total_debit;
+        }
+
+        $account->balance = $balance;
+
+        $account->save();
+
+        return (float) $balance;
+    }
+
 }

@@ -241,7 +241,11 @@
                                             </select>
                                         </td>
                                         <td><input type="number" name="rules[{{ $ri }}][amount_value]" value="{{ $rule['amount_value'] ?? '' }}" class="form-control form-control-sm form-control-solid" step="0.01" min="0" /></td>
-                                        <td><input type="text" name="rules[{{ $ri }}][amount_field]" value="{{ $rule['amount_field'] ?? '' }}" class="form-control form-control-sm form-control-solid" placeholder="total" /></td>
+                                        <td>
+                                            <select name="rules[{{ $ri }}][amount_field]" class="form-select form-select-sm form-select-solid amount-field-select" data-value="{{ $rule['amount_field'] ?? '' }}">
+                                                <option value="">-- --</option>
+                                            </select>
+                                        </td>
                                         <td>
                                             <select name="rules[{{ $ri }}][cost_center_source]" class="form-select form-select-sm form-select-solid cc-source-select">
                                                 <option value="">-- --</option>
@@ -298,7 +302,11 @@
                             </select>
                         </td>
                         <td><input type="number" name="rules[__IDX__][amount_value]" value="" class="form-control form-control-sm form-control-solid" step="0.01" min="0" /></td>
-                        <td><input type="text" name="rules[__IDX__][amount_field]" value="" class="form-control form-control-sm form-control-solid" placeholder="total" /></td>
+                        <td>
+                            <select name="rules[__IDX__][amount_field]" class="form-select form-select-sm form-select-solid amount-field-select" data-value="">
+                                <option value="">-- --</option>
+                            </select>
+                        </td>
                         <td>
                             <select name="rules[__IDX__][cost_center_source]" class="form-select form-select-sm form-select-solid cc-source-select">
                                 <option value="">-- --</option>

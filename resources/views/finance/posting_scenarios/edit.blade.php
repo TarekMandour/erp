@@ -42,6 +42,57 @@
 $(function () {
     var rowIndex = {{ $data->rules->count() }};
 
+    // ── Amount-field map per operation type ──────────────────────────────────
+    var AMOUNT_FIELD_MAP = {
+        sales:               [{v:'subtotal',l:'المجموع الفرعي'},{v:'discount',l:'الخصم'},{v:'tax',l:'الضريبة'},{v:'shipping_cost',l:'تكلفة الشحن'},{v:'total',l:'الإجمالي'},{v:'paid',l:'المدفوع'}],
+        sales_return:        [{v:'subtotal',l:'المجموع الفرعي'},{v:'discount',l:'الخصم'},{v:'tax',l:'الضريبة'},{v:'shipping_cost',l:'تكلفة الشحن'},{v:'total',l:'الإجمالي'},{v:'paid',l:'المدفوع'}],
+        sales_discount:      [{v:'subtotal',l:'المجموع الفرعي'},{v:'discount',l:'الخصم'},{v:'tax',l:'الضريبة'},{v:'shipping_cost',l:'تكلفة الشحن'},{v:'total',l:'الإجمالي'},{v:'paid',l:'المدفوع'}],
+        sales_installment:   [{v:'subtotal',l:'المجموع الفرعي'},{v:'discount',l:'الخصم'},{v:'tax',l:'الضريبة'},{v:'shipping_cost',l:'تكلفة الشحن'},{v:'total',l:'الإجمالي'},{v:'paid',l:'المدفوع'}],
+        purchase:            [{v:'subtotal',l:'المجموع الفرعي'},{v:'discount',l:'الخصم'},{v:'tax',l:'الضريبة'},{v:'total',l:'الإجمالي'},{v:'paid',l:'المدفوع'}],
+        purchase_return:     [{v:'subtotal',l:'المجموع الفرعي'},{v:'discount',l:'الخصم'},{v:'tax',l:'الضريبة'},{v:'total',l:'الإجمالي'},{v:'paid',l:'المدفوع'}],
+        purchase_discount:   [{v:'subtotal',l:'المجموع الفرعي'},{v:'discount',l:'الخصم'},{v:'tax',l:'الضريبة'},{v:'total',l:'الإجمالي'},{v:'paid',l:'المدفوع'}],
+        inventory_in:        [{v:'quantity',l:'الكمية'},{v:'unit_cost',l:'تكلفة الوحدة'}],
+        inventory_out:       [{v:'quantity',l:'الكمية'},{v:'unit_cost',l:'تكلفة الوحدة'}],
+        inventory_transfer:  [{v:'quantity',l:'الكمية'}],
+        inventory_adjustment:[{v:'quantity',l:'الكمية'},{v:'unit_cost',l:'تكلفة الوحدة'}],
+        inventory_write_off: [{v:'quantity',l:'الكمية'},{v:'unit_cost',l:'تكلفة الوحدة'}],
+        inventory_revaluation:[{v:'quantity',l:'الكمية'},{v:'unit_cost',l:'تكلفة الوحدة'}],
+        wallet_deposit:      [{v:'debit',l:'مدين'},{v:'credit',l:'دائن'},{v:'balance',l:'الرصيد'}],
+        wallet_withdraw:     [{v:'debit',l:'مدين'},{v:'credit',l:'دائن'},{v:'balance',l:'الرصيد'}],
+        wallet_payment:      [{v:'debit',l:'مدين'},{v:'credit',l:'دائن'},{v:'balance',l:'الرصيد'}],
+        wallet_refund:       [{v:'debit',l:'مدين'},{v:'credit',l:'دائن'},{v:'balance',l:'الرصيد'}],
+    };
+    var AMOUNT_FIELD_DEFAULT = [{v:'total_amount',l:'إجمالي المبلغ'}];
+
+    function getAmountFields(opType) {
+        return AMOUNT_FIELD_MAP[opType] || AMOUNT_FIELD_DEFAULT;
+    }
+
+    function populateAmountFieldSelect($select, opType, savedValue) {
+        var fields = getAmountFields(opType);
+        $select.empty().append('<option value="">-- --</option>');
+        $.each(fields, function (i, f) {
+            $select.append($('<option>', {value: f.v, text: f.l}));
+        });
+        if (savedValue) {
+            if ($select.find('option[value="' + savedValue + '"]').length === 0) {
+                $select.append($('<option>', {value: savedValue, text: savedValue}));
+            }
+            $select.val(savedValue);
+        }
+    }
+
+    function repopulateAllAmountFieldSelects() {
+        var opType = $('[name=operation_type]').val();
+        $('#rules_body .amount-field-select').each(function () {
+            var saved = $(this).val() || $(this).data('value') || '';
+            populateAmountFieldSelect($(this), opType, saved);
+        });
+    }
+
+    $('[name=operation_type]').on('change', repopulateAllAmountFieldSelects);
+    // ─────────────────────────────────────────────────────────────────────────
+
     $('#btn_add_rule').on('click', function () {
         var tpl = document.getElementById('rule_row_template').innerHTML;
         tpl = tpl.replace(/__IDX__/g, rowIndex);
@@ -49,6 +100,7 @@ $(function () {
         var $row = $(tpl);
         $('#rules_body').append($row);
         bindRowEvents($row);
+        populateAmountFieldSelect($row.find('.amount-field-select'), $('[name=operation_type]').val(), '');
     });
 
     function bindRowEvents($row) {
@@ -61,8 +113,9 @@ $(function () {
         });
     }
 
-    // bind existing rows
+    // bind existing rows and populate their selects
     $('#rules_body tr').each(function () { bindRowEvents($(this)); });
+    repopulateAllAmountFieldSelects();
 
     // prevent double-submit
     $('#scenario_form').on('submit', function () {

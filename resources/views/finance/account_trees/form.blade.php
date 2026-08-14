@@ -31,6 +31,13 @@
             </select>
             @error('parent_id')<div class="text-danger mt-1 mb-3">{{$message}}</div>@enderror
 
+            <label class="form-label"> طبيعة الحساب</label>
+            <select class="form-select form-select-solid mb-5" name="account_type">
+                <option value="debit" @if(old('account_type', $data->account_type ?? '') == 'debit') selected @endif>مدين</option>
+                <option value="credit" @if(old('account_type', $data->account_type ?? '') == 'credit') selected @endif>دائن</option>
+            </select>
+            @error('account_type')<div class="text-danger mt-1 mb-3">{{$message}}</div>@enderror
+
             <div class="form-check form-switch mb-5 mt-3">
                 <input class="form-check-input" type="checkbox" name="is_active" id="is_active"
                     @if(old('is_active', $data->is_active ?? true)) checked @endif />

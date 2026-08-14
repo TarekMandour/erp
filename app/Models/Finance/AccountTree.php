@@ -14,6 +14,7 @@ class AccountTree extends Model
         'code',
         'parent_id',
         'type',
+        'account_type',
         'level',
         'total_debit',
         'total_credit',

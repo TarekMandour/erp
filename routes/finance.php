@@ -167,6 +167,7 @@ Route::group(['middleware' => ['admin']], function () {
         Route::post('/store', 'AccountTreeController@store')->name('store');
         Route::get('/edit/{id}', 'AccountTreeController@edit')->name('edit');
         Route::post('/update', 'AccountTreeController@update')->name('update');
+        Route::get('/recalculate', 'AccountTreeController@recalculate')->name('recalculate');
     });
 
     Route::name('journal_entries.')->prefix('journal-entries')->group(function () {
