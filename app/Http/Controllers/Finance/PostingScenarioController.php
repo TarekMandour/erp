@@ -98,6 +98,7 @@ class PostingScenarioController extends Controller
             $rule['created_by'] = $data['created_by'];
             $rule['is_required'] = isset($rule['is_required']) ? 1 : 0;
             $rule['conditions']  = !empty($rule['conditions']) ? $rule['conditions'] : null;
+            $rule['amount_field'] = !empty($rule['amount_field']) ? $rule['amount_field'] : null;
             $scenario->rules()->create($rule);
         }
 
@@ -136,6 +137,7 @@ class PostingScenarioController extends Controller
             $rule['created_by'] = $adminId;
             $rule['is_required'] = isset($rule['is_required']) ? 1 : 0;
             $rule['conditions']  = !empty($rule['conditions']) ? $rule['conditions'] : null;
+            $rule['amount_field'] = !empty($rule['amount_field']) ? $rule['amount_field'] : null;
             $scenario->rules()->create($rule);
         }
 

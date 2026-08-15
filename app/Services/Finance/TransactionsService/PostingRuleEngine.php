@@ -90,7 +90,7 @@ class PostingRuleEngine
      */
     public function calculateAmount(PostingRule $rule, Model $sourceModel): float
     {
-        $baseAmount = $this->getFieldValue($sourceModel, $rule->amount_field ?? 'total_amount');
+        $baseAmount = $this->getFieldValue($sourceModel, $rule->amount_field ?: 'total_amount');
 
         return match ($rule->amount_type) {
             'fixed'         => (float) ($rule->amount_value ?? 0),
