@@ -28,7 +28,7 @@ return Application::configure(basePath: dirname(__DIR__))
             ->prefix('admin/finance')
             ->name('finance.')
             ->namespace('App\Http\Controllers\Finance')
-            ->group(base_path('routes\finance.php'));
+            ->group(base_path('routes/finance.php'));
         }
     )
     ->withMiddleware(function (Middleware $middleware): void {
