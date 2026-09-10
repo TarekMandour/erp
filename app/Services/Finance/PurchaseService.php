@@ -75,6 +75,12 @@ class PurchaseService
 
         // تأكد أنه لا يوجد قيد مسبق لهذه الفاتورة
         SupplierWallet::where('purchase_id', $purchase->id)->delete();
+        
+        $previousBalance = SupplierWallet::where('supplier_id', $purchase->supplier_id)
+            ->latest('id')
+            ->value('balance') ?? 0;
+
+        $balance = $previousBalance + $purchase->total;
 
         SupplierWallet::create([
             'supplier_id' => $purchase->supplier_id,
@@ -82,10 +88,23 @@ class PurchaseService
             'date'        => $purchase->date,
             'description' => 'فاتورة شراء رقم: ' . $purchase->purchase_number,
             'debit'       => 0,
-            'credit'      => $purchase->total,   // مبلغ مستحق للمورد
-            'previous_balance' => 0,
-            'balance'     => 0,
+            'credit'      => $purchase->total,
+            'previous_balance' => $previousBalance,
+            'balance'     => $balance,
         ]);
+        
+        if ($purchase->paid > 0) {
+            SupplierWallet::create([
+                'supplier_id' => $purchase->supplier_id,
+                'purchase_id' => $purchase->id,
+                'date'        => $purchase->date,
+                'description' => 'عن فاتورة شراء رقم: ' . $purchase->purchase_number,
+                'debit'       => $purchase->paid,
+                'credit'      => 0,
+                'previous_balance' => $balance,
+                'balance'     => $balance - $purchase->paid,
+            ]);
+        }
 
         $this->recalculateSupplierBalance($purchase->supplier_id);
     }
@@ -210,12 +229,16 @@ class PurchaseService
 
             // الكمية الحالية قبل الزيادة كانت: الكمية الإجمالية - الكمية المضافة للتو
             $currentQty = max(0, (float) InventoryItem::where([
-                'warehouse_id' => $warehouseId,
                 'product_id'   => $item->product_id,
                 'variant_id'   => $item->variant_id,
             ])->value('quantity') - $newQty);
 
-            $oldAvg  = (float) ($variant->average_cost ?? $newCost);
+            $oldAvg = (float) ($variant->average_cost ?? 0);
+
+            // إذا لم يكن المتوسط محسوباً، استخدم التكلفة الحالية الفعلية
+            if ($oldAvg <= 0) {
+                $oldAvg = (float) ($variant->cost_price ?? $newCost);
+            }
             $totalQty = $currentQty + $newQty;
             $newAvg  = $totalQty > 0
                 ? (($currentQty * $oldAvg) + ($newQty * $newCost)) / $totalQty
@@ -234,12 +257,14 @@ class PurchaseService
             }
 
             $currentQty = max(0, (float) InventoryItem::where([
-                'warehouse_id' => $warehouseId,
                 'product_id'   => $item->product_id,
                 'variant_id'   => null,
             ])->value('quantity') - $newQty);
 
-            $oldAvg   = (float) ($product->average_cost ?? $newCost);
+            $oldAvg   = (float) ($product->average_cost ?? 0);
+            if ($oldAvg <= 0) {
+                $oldAvg = (float) ($product->cost_price ?? $newCost);
+            }
             $totalQty = $currentQty + $newQty;
             $newAvg   = $totalQty > 0
                 ? (($currentQty * $oldAvg) + ($newQty * $newCost)) / $totalQty

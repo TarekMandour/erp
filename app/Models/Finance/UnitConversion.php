@@ -37,4 +37,14 @@ class UnitConversion extends Model
     {
         return $this->belongsTo(ProductVariant::class);
     }
+
+    public function targetUnit()
+    {
+        return $this->belongsTo(Unit::class, 'target_unit', 'id');
+    }
+
+    public function baseUnit()
+    {
+        return $this->belongsTo(Unit::class, 'base_unit', 'id');
+    }
 }

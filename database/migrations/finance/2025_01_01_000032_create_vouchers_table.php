@@ -11,7 +11,7 @@ return new class extends Migration
         Schema::create('vouchers', function (Blueprint $table) {
             $table->id();
             $table->enum('type', ['payment', 'receipt']);
-            $table->enum('payment_type', ['cash', 'credit', 'installments']);
+            $table->enum('payment_type', ['cash', 'credit', 'installments','wallet', 'bank_online', 'bank_direct','check']);
             $table->enum('party_type', ['customer', 'supplier', 'other']);
             $table->unsignedBigInteger('party_id')->nullable();
             $table->string('party_name')->nullable();

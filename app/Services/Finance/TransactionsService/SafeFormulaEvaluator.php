@@ -43,16 +43,27 @@ class SafeFormulaEvaluator
      */
     protected function replaceVariables(string $formula, Model $sourceModel): string
     {
-        $variables = [
-            '{{total}}'        => (float) ($sourceModel->total ?? 0),
-            '{{total_amount}}' => (float) ($sourceModel->total_amount ?? 0),
-            '{{subtotal}}'     => (float) ($sourceModel->subtotal ?? 0),
-            '{{tax}}'          => (float) ($sourceModel->tax ?? 0),
-            '{{discount}}'     => (float) ($sourceModel->discount ?? 0),
-            '{{shipping}}'     => (float) ($sourceModel->shipping_cost ?? 0),
+        $map = [
+            'total_amount' => (float) ($sourceModel->total_amount ?? 0),
+            'total'        => (float) ($sourceModel->total ?? 0),
+            'subtotal'     => (float) ($sourceModel->subtotal ?? 0),
+            'tax'          => (float) ($sourceModel->tax ?? 0),
+            'discount'     => (float) ($sourceModel->discount ?? 0),
+            'shipping'     => (float) ($sourceModel->shipping_cost ?? 0),
+            'paid'         => (float) ($sourceModel->paid ?? 0),
         ];
 
-        return str_replace(array_keys($variables), array_values($variables), $formula);
+        // Replace {{variable}} syntax first
+        foreach ($map as $key => $value) {
+            $formula = str_replace('{{' . $key . '}}', $value, $formula);
+        }
+
+        // Replace plain word syntax using word boundaries to avoid partial matches
+        foreach ($map as $key => $value) {
+            $formula = preg_replace('/\b' . preg_quote($key, '/') . '\b/', $value, $formula);
+        }
+
+        return $formula;
     }
 
     /**

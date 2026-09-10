@@ -101,20 +101,56 @@ $(function () {
         $('#rules_body').append($row);
         bindRowEvents($row);
         populateAmountFieldSelect($row.find('.amount-field-select'), $('[name=operation_type]').val(), '');
+        updateAmountDetail($row);
     });
 
-    function bindRowEvents($row) {
-        $row.find('.btn-remove-rule').on('click', function () {
-            $(this).closest('tr').remove();
+    function updateAmountDetail($row) {
+        var type = $row.find('.amount-type-select').val();
+        var $field = $row.find('.amount-field-select');
+        var $formula = $row.find('.formula-input');
+        var $value = $row.find('.amount-value-input');
+        $field.toggleClass('d-none', type === 'formula' || type === 'fixed');
+        $formula.toggleClass('d-none', type !== 'formula');
+        $value.toggleClass('d-none', type !== 'fixed' && type !== 'percentage');
+    }
+
+    function addVarRow($varsRow, ruleIdx, varIdx) {
+        var tpl = document.getElementById('var_row_template').innerHTML;
+        tpl = tpl
+            .replace(/__VAR_NAME__/g,  'rules[' + ruleIdx + '][variables][' + varIdx + '][variable_name]')
+            .replace(/__VAR_TYPE__/g,  'rules[' + ruleIdx + '][variables][' + varIdx + '][source_type]')
+            .replace(/__VAR_VALUE__/g, 'rules[' + ruleIdx + '][variables][' + varIdx + '][source_value]');
+        var $row = $(tpl);
+        $row.find('.btn-remove-var').on('click', function () { $(this).closest('tr').remove(); });
+        $varsRow.find('.vars-body').append($row);
+    }
+
+    function bindRowEvents($ruleRow) {
+        var $varsRow = $ruleRow.next('.vars-row');
+        var ruleIdx  = $ruleRow.find('input[name*="[rule_group]"]').attr('name').match(/rules\[(\d+)\]/)[1];
+
+        $ruleRow.find('.btn-remove-rule').on('click', function () {
+            $ruleRow.remove();
+            $varsRow.remove();
         });
-        $row.find('.cc-source-select').on('change', function () {
-            var $cell = $(this).closest('tr').find('.fixed-cc-cell');
-            $(this).val() === 'fixed' ? $cell.show() : $cell.hide();
+        $ruleRow.find('.amount-type-select').on('change', function () {
+            updateAmountDetail($ruleRow);
+        });
+        $ruleRow.find('.btn-toggle-vars').on('click', function () {
+            $varsRow.toggle();
+        });
+
+        var varIdx = $varsRow.find('.var-row').length;
+        $varsRow.find('.btn-add-var').on('click', function () {
+            addVarRow($varsRow, ruleIdx, varIdx++);
+        });
+        $varsRow.find('.btn-remove-var').on('click', function () {
+            $(this).closest('tr').remove();
         });
     }
 
     // bind existing rows and populate their selects
-    $('#rules_body tr').each(function () { bindRowEvents($(this)); });
+    $('#rules_body tr.rule-row').each(function () { bindRowEvents($(this)); });
     repopulateAllAmountFieldSelects();
 
     // prevent double-submit

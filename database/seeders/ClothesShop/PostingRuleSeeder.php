@@ -19,6 +19,10 @@ class PostingRuleSeeder extends Seeder
         // ─── حسابات الدليل المحاسبي (مطابقة لـ AccountTreeSeeder) ───
         $cash         = AccountTree::where('code', '1101')->first(); // الصندوق (النقدية)
         $bank         = AccountTree::where('code', '1102')->first(); // البنك
+        $wallet        = AccountTree::where('code', '1106')->first(); // المحافظ الإلكترونية
+        $bankOnline    = AccountTree::where('code', '1107')->first(); // البنك - أونلاين
+        $bankDirect    = AccountTree::where('code', '1108')->first(); // البنك - مباشر
+        $checkPayable  = AccountTree::where('code', '2105')->first(); // شيكات مستحقة الدفع
         $inventory    = AccountTree::where('code', '1103')->first(); // المخزون
         $customers    = AccountTree::where('code', '1104')->first(); // العملاء (ذمم مدينة)
         $prepaidExp   = AccountTree::where('code', '1105')->first(); // مصروفات مدفوعة مقدماً
@@ -151,6 +155,57 @@ class PostingRuleSeeder extends Seeder
             $rules[] = ['scenario_id' => $scenario->id, 'rule_group' => 1, 'debit_account_id' => $suppliers?->id, 'credit_account_id' => null,            'amount_type' => 'total',    'amount_field' => 'total',    'sort_order' => 1, 'is_required' => 1];
             $rules[] = ['scenario_id' => $scenario->id, 'rule_group' => 1, 'debit_account_id' => null,            'credit_account_id' => $inventory?->id,  'amount_type' => 'subtotal', 'amount_field' => 'subtotal', 'sort_order' => 2, 'is_required' => 1];
             $rules[] = ['scenario_id' => $scenario->id, 'rule_group' => 1, 'debit_account_id' => null,            'credit_account_id' => $vatPayable?->id, 'amount_type' => 'tax',      'amount_field' => 'tax',      'sort_order' => 3, 'is_required' => 1];
+        }
+
+        // ==================== 9. مرتجع مشتريات بالتقسيط (PURCHASE_RETURN_INSTALLMENTS) ====================
+        // ح/ الموردين (مدين - الإجمالي)
+        //   ح/ المخزون (دائن - الصافي)
+        //   ح/ ضريبة القيمة المضافة (دائن - الضريبة)
+        $scenario = PostingScenario::where('code', 'PURCHASE_RETURN_INSTALLMENTS')->first();
+        if ($scenario) {
+            $rules[] = ['scenario_id' => $scenario->id, 'rule_group' => 1, 'debit_account_id' => $suppliers?->id, 'credit_account_id' => null, 'amount_type' => 'total', 'amount_field' => 'total', 'sort_order' => 1, 'is_required' => 1];
+            $rules[] = ['scenario_id' => $scenario->id, 'rule_group' => 1, 'debit_account_id' => null, 'credit_account_id' => $inventory?->id, 'amount_type' => 'subtotal', 'amount_field' => 'subtotal', 'sort_order' => 2, 'is_required' => 1];
+            $rules[] = ['scenario_id' => $scenario->id, 'rule_group' => 1, 'debit_account_id' => null, 'credit_account_id' => $vatPayable?->id, 'amount_type' => 'tax', 'amount_field' => 'tax', 'sort_order' => 3, 'is_required' => 1];
+        }
+
+        // ==================== 10. مرتجع مشتريات بالمحفظة (PURCHASE_RETURN_WALLET) ====================
+        // ح/ المحفظة (مدين - المبلغ المسترد)
+        // ح/ الموردين (مدين - المتبقي إن وجد)
+        //   ح/ المخزون (دائن - الصافي)
+        //   ح/ ضريبة القيمة المضافة (دائن - الضريبة)
+        $scenario = PostingScenario::where('code', 'PURCHASE_RETURN_WALLET')->first();
+        if ($scenario) {
+            $rules[] = ['scenario_id' => $scenario->id, 'rule_group' => 1, 'debit_account_id' => $wallet?->id, 'credit_account_id' => null, 'amount_type' => 'total', 'amount_field' => 'paid', 'sort_order' => 1, 'is_required' => 1];
+            $rules[] = ['scenario_id' => $scenario->id, 'rule_group' => 1, 'debit_account_id' => $suppliers?->id, 'credit_account_id' => null, 'amount_type' => 'formula', 'formula' => 'total - paid', 'sort_order' => 2, 'is_required' => 1];
+            $rules[] = ['scenario_id' => $scenario->id, 'rule_group' => 1, 'debit_account_id' => null, 'credit_account_id' => $inventory?->id, 'amount_type' => 'subtotal', 'amount_field' => 'subtotal', 'sort_order' => 3, 'is_required' => 1];
+            $rules[] = ['scenario_id' => $scenario->id, 'rule_group' => 1, 'debit_account_id' => null, 'credit_account_id' => $vatPayable?->id, 'amount_type' => 'tax', 'amount_field' => 'tax', 'sort_order' => 4, 'is_required' => 1];
+        }
+
+        // ==================== 11. مرتجع مشتريات البنك أونلاين (PURCHASE_RETURN_BANK_ONLINE) ====================
+        $scenario = PostingScenario::where('code', 'PURCHASE_RETURN_BANK_ONLINE')->first();
+        if ($scenario) {
+            $rules[] = ['scenario_id' => $scenario->id, 'rule_group' => 1, 'debit_account_id' => $bankOnline?->id, 'credit_account_id' => null, 'amount_type' => 'total', 'amount_field' => 'paid', 'sort_order' => 1, 'is_required' => 1];
+            $rules[] = ['scenario_id' => $scenario->id, 'rule_group' => 1, 'debit_account_id' => $suppliers?->id, 'credit_account_id' => null, 'amount_type' => 'formula', 'formula' => 'total - paid', 'sort_order' => 2, 'is_required' => 1];
+            $rules[] = ['scenario_id' => $scenario->id, 'rule_group' => 1, 'debit_account_id' => null, 'credit_account_id' => $inventory?->id, 'amount_type' => 'subtotal', 'amount_field' => 'subtotal', 'sort_order' => 3, 'is_required' => 1];
+            $rules[] = ['scenario_id' => $scenario->id, 'rule_group' => 1, 'debit_account_id' => null, 'credit_account_id' => $vatPayable?->id, 'amount_type' => 'tax', 'amount_field' => 'tax', 'sort_order' => 4, 'is_required' => 1];
+        }
+
+        // ==================== 12. مرتجع مشتريات البنك مباشر (PURCHASE_RETURN_BANK_DIRECT) ====================
+        $scenario = PostingScenario::where('code', 'PURCHASE_RETURN_BANK_DIRECT')->first();
+        if ($scenario) {
+            $rules[] = ['scenario_id' => $scenario->id, 'rule_group' => 1, 'debit_account_id' => $bankDirect?->id, 'credit_account_id' => null, 'amount_type' => 'total', 'amount_field' => 'paid', 'sort_order' => 1, 'is_required' => 1];
+            $rules[] = ['scenario_id' => $scenario->id, 'rule_group' => 1, 'debit_account_id' => $suppliers?->id, 'credit_account_id' => null, 'amount_type' => 'formula', 'formula' => 'total - paid', 'sort_order' => 2, 'is_required' => 1];
+            $rules[] = ['scenario_id' => $scenario->id, 'rule_group' => 1, 'debit_account_id' => null, 'credit_account_id' => $inventory?->id, 'amount_type' => 'subtotal', 'amount_field' => 'subtotal', 'sort_order' => 3, 'is_required' => 1];
+            $rules[] = ['scenario_id' => $scenario->id, 'rule_group' => 1, 'debit_account_id' => null, 'credit_account_id' => $vatPayable?->id, 'amount_type' => 'tax', 'amount_field' => 'tax', 'sort_order' => 4, 'is_required' => 1];
+        }
+
+        // ==================== 13. مرتجع مشتريات بشيك (PURCHASE_RETURN_CHECK) ====================
+        $scenario = PostingScenario::where('code', 'PURCHASE_RETURN_CHECK')->first();
+        if ($scenario) {
+            $rules[] = ['scenario_id' => $scenario->id, 'rule_group' => 1, 'debit_account_id' => $checkPayable?->id, 'credit_account_id' => null, 'amount_type' => 'total', 'amount_field' => 'paid', 'sort_order' => 1, 'is_required' => 1];
+            $rules[] = ['scenario_id' => $scenario->id, 'rule_group' => 1, 'debit_account_id' => $suppliers?->id, 'credit_account_id' => null, 'amount_type' => 'formula', 'formula' => 'total - paid', 'sort_order' => 2, 'is_required' => 1];
+            $rules[] = ['scenario_id' => $scenario->id, 'rule_group' => 1, 'debit_account_id' => null, 'credit_account_id' => $inventory?->id, 'amount_type' => 'subtotal', 'amount_field' => 'subtotal', 'sort_order' => 3, 'is_required' => 1];
+            $rules[] = ['scenario_id' => $scenario->id, 'rule_group' => 1, 'debit_account_id' => null, 'credit_account_id' => $vatPayable?->id, 'amount_type' => 'tax', 'amount_field' => 'tax', 'sort_order' => 4, 'is_required' => 1];
         }
 
         // ==================== 9. قبض من عميل نقداً (RECEIPT_CUSTOMER_CASH) ====================
@@ -384,6 +439,169 @@ class PostingRuleSeeder extends Seeder
             $rules[] = ['scenario_id' => $scenario->id, 'rule_group' => 1, 'debit_account_id' => null, 'credit_account_id' => $discountGiven?->id,'amount_type' => 'formula', 'amount_field' => null, 'sort_order' => 11,'is_required' => 0];
             // صافي الربح → الأرباح المبقاة
             $rules[] = ['scenario_id' => $scenario->id, 'rule_group' => 1, 'debit_account_id' => null, 'credit_account_id' => $retained?->id,     'amount_type' => 'formula', 'amount_field' => null, 'sort_order' => 12,'is_required' => 1];
+        }
+
+        // ==================== PURCHASE_INSTALLMENTS ====================
+        $scenario = PostingScenario::where('code', 'PURCHASE_INSTALLMENTS')->first();
+        if ($scenario) {
+            // Inventory = subtotal - discount
+            $rules[] = [
+                'scenario_id' => $scenario->id, 'rule_group' => 1,
+                'debit_account_id' => $inventory?->id, 'credit_account_id' => null,
+                'amount_type' => 'formula', 'formula' => 'subtotal - discount',
+                'sort_order' => 1, 'is_required' => 1
+            ];
+
+            // Input VAT
+            $rules[] = [
+                'scenario_id' => $scenario->id, 'rule_group' => 1,
+                'debit_account_id' => $vatPayable?->id, 'credit_account_id' => null,
+                'amount_type' => 'tax', 'amount_field' => 'tax',
+                'sort_order' => 2, 'is_required' => 1
+            ];
+            // Supplier = total
+            $rules[] = [
+                'scenario_id' => $scenario->id, 'rule_group' => 1,
+                'debit_account_id' => null, 'credit_account_id' => $suppliers?->id,
+                'amount_type' => 'total', 'amount_field' => 'total',
+                'sort_order' => 3, 'is_required' => 1
+            ];
+        }
+        // ==================== PURCHASE_WALLET ====================
+        $scenario = PostingScenario::where('code', 'PURCHASE_WALLET')->first();
+        if ($scenario) {
+            // Inventory = subtotal - discount
+            $rules[] = [
+                'scenario_id' => $scenario->id, 'rule_group' => 1,
+                'debit_account_id' => $inventory?->id, 'credit_account_id' => null,
+                'amount_type' => 'formula', 'formula' => 'subtotal - discount',
+                'sort_order' => 1, 'is_required' => 1
+            ];
+
+            // Input VAT
+            $rules[] = [
+                'scenario_id' => $scenario->id, 'rule_group' => 1,
+                'debit_account_id' => $vatPayable?->id, 'credit_account_id' => null,
+                'amount_type' => 'tax', 'amount_field' => 'tax',
+                'sort_order' => 2, 'is_required' => 1
+            ];
+            // Payment account = paid
+            $rules[] = [
+                'scenario_id' => $scenario->id, 'rule_group' => 1,
+                'debit_account_id' => null, 'credit_account_id' => $wallet?->id,
+                'amount_type' => 'total', 'amount_field' => 'paid',
+                'sort_order' => 3, 'is_required' => 1
+            ];
+
+            // Supplier = total - paid
+            $rules[] = [
+                'scenario_id' => $scenario->id, 'rule_group' => 1,
+                'debit_account_id' => null, 'credit_account_id' => $suppliers?->id,
+                'amount_type' => 'formula', 'formula' => 'total - paid',
+                'sort_order' => 4, 'is_required' => 1
+            ];
+        }
+        // ==================== PURCHASE_BANK_ONLINE ====================
+        $scenario = PostingScenario::where('code', 'PURCHASE_BANK_ONLINE')->first();
+        if ($scenario) {
+            // Inventory = subtotal - discount
+            $rules[] = [
+                'scenario_id' => $scenario->id, 'rule_group' => 1,
+                'debit_account_id' => $inventory?->id, 'credit_account_id' => null,
+                'amount_type' => 'formula', 'formula' => 'subtotal - discount',
+                'sort_order' => 1, 'is_required' => 1
+            ];
+
+            // Input VAT
+            $rules[] = [
+                'scenario_id' => $scenario->id, 'rule_group' => 1,
+                'debit_account_id' => $vatPayable?->id, 'credit_account_id' => null,
+                'amount_type' => 'tax', 'amount_field' => 'tax',
+                'sort_order' => 2, 'is_required' => 1
+            ];
+            // Payment account = paid
+            $rules[] = [
+                'scenario_id' => $scenario->id, 'rule_group' => 1,
+                'debit_account_id' => null, 'credit_account_id' => $bankOnline?->id,
+                'amount_type' => 'total', 'amount_field' => 'paid',
+                'sort_order' => 3, 'is_required' => 1
+            ];
+
+            // Supplier = total - paid
+            $rules[] = [
+                'scenario_id' => $scenario->id, 'rule_group' => 1,
+                'debit_account_id' => null, 'credit_account_id' => $suppliers?->id,
+                'amount_type' => 'formula', 'formula' => 'total - paid',
+                'sort_order' => 4, 'is_required' => 1
+            ];
+        }
+        // ==================== PURCHASE_BANK_DIRECT ====================
+        $scenario = PostingScenario::where('code', 'PURCHASE_BANK_DIRECT')->first();
+        if ($scenario) {
+            // Inventory = subtotal - discount
+            $rules[] = [
+                'scenario_id' => $scenario->id, 'rule_group' => 1,
+                'debit_account_id' => $inventory?->id, 'credit_account_id' => null,
+                'amount_type' => 'formula', 'formula' => 'subtotal - discount',
+                'sort_order' => 1, 'is_required' => 1
+            ];
+
+            // Input VAT
+            $rules[] = [
+                'scenario_id' => $scenario->id, 'rule_group' => 1,
+                'debit_account_id' => $vatPayable?->id, 'credit_account_id' => null,
+                'amount_type' => 'tax', 'amount_field' => 'tax',
+                'sort_order' => 2, 'is_required' => 1
+            ];
+            // Payment account = paid
+            $rules[] = [
+                'scenario_id' => $scenario->id, 'rule_group' => 1,
+                'debit_account_id' => null, 'credit_account_id' => $bankDirect?->id,
+                'amount_type' => 'total', 'amount_field' => 'paid',
+                'sort_order' => 3, 'is_required' => 1
+            ];
+
+            // Supplier = total - paid
+            $rules[] = [
+                'scenario_id' => $scenario->id, 'rule_group' => 1,
+                'debit_account_id' => null, 'credit_account_id' => $suppliers?->id,
+                'amount_type' => 'formula', 'formula' => 'total - paid',
+                'sort_order' => 4, 'is_required' => 1
+            ];
+        }
+        // ==================== PURCHASE_CHECK ====================
+        $scenario = PostingScenario::where('code', 'PURCHASE_CHECK')->first();
+        if ($scenario) {
+            // Inventory = subtotal - discount
+            $rules[] = [
+                'scenario_id' => $scenario->id, 'rule_group' => 1,
+                'debit_account_id' => $inventory?->id, 'credit_account_id' => null,
+                'amount_type' => 'formula', 'formula' => 'subtotal - discount',
+                'sort_order' => 1, 'is_required' => 1
+            ];
+
+            // Input VAT
+            $rules[] = [
+                'scenario_id' => $scenario->id, 'rule_group' => 1,
+                'debit_account_id' => $vatPayable?->id, 'credit_account_id' => null,
+                'amount_type' => 'tax', 'amount_field' => 'tax',
+                'sort_order' => 2, 'is_required' => 1
+            ];
+            // Payment account = paid
+            $rules[] = [
+                'scenario_id' => $scenario->id, 'rule_group' => 1,
+                'debit_account_id' => null, 'credit_account_id' => $checkPayable?->id,
+                'amount_type' => 'total', 'amount_field' => 'paid',
+                'sort_order' => 3, 'is_required' => 1
+            ];
+
+            // Supplier = total - paid
+            $rules[] = [
+                'scenario_id' => $scenario->id, 'rule_group' => 1,
+                'debit_account_id' => null, 'credit_account_id' => $suppliers?->id,
+                'amount_type' => 'formula', 'formula' => 'total - paid',
+                'sort_order' => 4, 'is_required' => 1
+            ];
         }
 
         // إدراج جميع القواعد

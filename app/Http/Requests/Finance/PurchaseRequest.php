@@ -18,7 +18,7 @@ class PurchaseRequest extends FormRequest
             'warehouse_id'         => 'required|exists:warehouses,id',
             'date'                 => 'required|date',
             'due_date'             => 'nullable|date|after_or_equal:date',
-            'payment_type'         => 'required|in:cash,credit,installments',
+            'payment_type'         => 'required|in:cash,credit,installments,wallet,bank_online,bank_direct,check',
             'status'               => 'required|in:pending,received,partially_received,cancelled',
             'notes'                => 'nullable|string|max:1000',
             'paid'                 => 'nullable|numeric|min:0',

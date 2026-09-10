@@ -15,7 +15,7 @@ return new class extends Migration
             $table->foreignId('warehouse_id')->constrained('warehouses');
             $table->date('date');
             $table->date('due_date')->nullable();
-            $table->enum('payment_type', ['cash', 'credit', 'installments'])->default('cash');
+            $table->enum('payment_type', ['cash', 'credit', 'installments','wallet','bank_online','bank_direct','check'])->default('cash');
             $table->enum('status', ['pending', 'received', 'partially_received', 'cancelled'])->default('pending');
             $table->text('notes')->nullable();
             $table->decimal('subtotal', 12, 2)->default(0);

@@ -29,7 +29,7 @@ class DatabaseSeeder extends Seeder
         $this->call([
             AdminSeeder::class,
             SettingSeeder::class,
-            ClothesShopSeeder::class,
+            // ClothesShopSeeder::class,
             AccountTreeSeeder::class,
             PostingScenarioSeeder::class,
             PostingRuleSeeder::class,

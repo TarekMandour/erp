@@ -29,6 +29,8 @@ class Product extends Model implements HasMedia
         'is_active',
         'has_expiry',
         'has_variants',
+        'average_cost',
+        'cost_price',
     ];
 
     protected $casts = [

@@ -95,11 +95,16 @@ class PostingScenarioController extends Controller
         $scenario = PostingScenario::create($data);
 
         foreach ($rules as $rule) {
-            $rule['created_by'] = $data['created_by'];
-            $rule['is_required'] = isset($rule['is_required']) ? 1 : 0;
-            $rule['conditions']  = !empty($rule['conditions']) ? $rule['conditions'] : null;
+            $variables = $rule['variables'] ?? [];
+            unset($rule['variables']);
+            $rule['created_by']   = $data['created_by'];
+            $rule['is_required']  = isset($rule['is_required']) ? 1 : 0;
+            $rule['conditions']   = !empty($rule['conditions']) ? $rule['conditions'] : null;
             $rule['amount_field'] = !empty($rule['amount_field']) ? $rule['amount_field'] : null;
-            $scenario->rules()->create($rule);
+            $newRule = $scenario->rules()->create($rule);
+            foreach ($variables as $variable) {
+                $newRule->variables()->create($variable);
+            }
         }
 
         return redirect()->route($this->route . '.show', $scenario->id)
@@ -112,6 +117,7 @@ class PostingScenarioController extends Controller
             'rules.debitAccount',
             'rules.creditAccount',
             'rules.fixedCostCenter',
+            'rules.variables',
         ])->findOrFail($id);
         $accounts    = AccountTree::where('is_active', true)->orderBy('code')->get();
         $costCenters = CostCenter::where('is_active', true)->orderBy('name')->get();
@@ -134,11 +140,16 @@ class PostingScenarioController extends Controller
 
         $adminId = auth()->guard('admin')->id();
         foreach ($rules as $rule) {
-            $rule['created_by'] = $adminId;
-            $rule['is_required'] = isset($rule['is_required']) ? 1 : 0;
-            $rule['conditions']  = !empty($rule['conditions']) ? $rule['conditions'] : null;
+            $variables = $rule['variables'] ?? [];
+            unset($rule['variables']);
+            $rule['created_by']   = $adminId;
+            $rule['is_required']  = isset($rule['is_required']) ? 1 : 0;
+            $rule['conditions']   = !empty($rule['conditions']) ? $rule['conditions'] : null;
             $rule['amount_field'] = !empty($rule['amount_field']) ? $rule['amount_field'] : null;
-            $scenario->rules()->create($rule);
+            $newRule = $scenario->rules()->create($rule);
+            foreach ($variables as $variable) {
+                $newRule->variables()->create($variable);
+            }
         }
 
         

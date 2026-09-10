@@ -192,16 +192,13 @@
                     <table class="table table-bordered align-middle table-row-dashed fs-7 gy-3" id="rules_table">
                         <thead class="table-light">
                             <tr class="fw-bold text-gray-700 text-center">
-                                <th class="min-w-60px">المجموعة</th>
-                                <th class="min-w-150px">حساب مدين</th>
-                                <th class="min-w-150px">حساب دائن</th>
-                                <th class="min-w-130px">نوع المبلغ</th>
-                                <th class="min-w-90px">القيمة</th>
-                                <th class="min-w-100px">الحقل</th>
-                                <th class="min-w-120px">مصدر مركز التكلفة</th>
-                                <th class="min-w-120px">مركز ثابت</th>
-                                <th class="min-w-70px">الترتيب</th>
-                                <th class="min-w-60px">إلزامي</th>
+                                <th class="min-w-50px">م</th>
+                                <th class="min-w-160px">حساب مدين</th>
+                                <th class="min-w-160px">حساب دائن</th>
+                                <th class="min-w-120px">نوع المبلغ</th>
+                                <th class="min-w-160px">المبلغ / الحقل / المعادلة</th>
+                                <th class="min-w-60px">ترتيب</th>
+                                <th class="min-w-50px">إلزامي</th>
                                 <th class="w-40px"></th>
                             </tr>
                         </thead>
@@ -209,66 +206,96 @@
 
                             @php $existingRules = old('rules', isset($data) ? $data->rules->toArray() : []); @endphp
 
-                            @if(count($existingRules) > 0)
-                                @foreach($existingRules as $ri => $rule)
-                                    <tr class="rule-row">
-                                        <td><input type="number" name="rules[{{ $ri }}][rule_group]" value="{{ $rule['rule_group'] ?? 1 }}" class="form-control form-control-sm form-control-solid text-center" min="1" /></td>
-                                        <td>
-                                            <select name="rules[{{ $ri }}][debit_account_id]" class="form-select form-select-sm form-select-solid">
-                                                <option value="">-- --</option>
-                                                @foreach($accounts as $acc)
-                                                    <option value="{{ $acc->id }}" {{ ($rule['debit_account_id'] ?? '') == $acc->id ? 'selected' : '' }}>{{ $acc->code }} - {{ $acc->name }}</option>
+                            @foreach($existingRules as $ri => $rule)
+                                @php $aType = $rule['amount_type'] ?? 'total'; @endphp
+                                <tr class="rule-row">
+                                    <td><input type="number" name="rules[{{ $ri }}][rule_group]" value="{{ $rule['rule_group'] ?? 1 }}" class="form-control form-control-sm form-control-solid text-center" min="1" /></td>
+                                    <td>
+                                        <select name="rules[{{ $ri }}][debit_account_id]" class="form-select form-select-sm form-select-solid">
+                                            <option value="">-- --</option>
+                                            @foreach($accounts as $acc)
+                                                <option value="{{ $acc->id }}" {{ ($rule['debit_account_id'] ?? '') == $acc->id ? 'selected' : '' }}>{{ $acc->code }} - {{ $acc->name }}</option>
+                                            @endforeach
+                                        </select>
+                                    </td>
+                                    <td>
+                                        <select name="rules[{{ $ri }}][credit_account_id]" class="form-select form-select-sm form-select-solid">
+                                            <option value="">-- --</option>
+                                            @foreach($accounts as $acc)
+                                                <option value="{{ $acc->id }}" {{ ($rule['credit_account_id'] ?? '') == $acc->id ? 'selected' : '' }}>{{ $acc->code }} - {{ $acc->name }}</option>
+                                            @endforeach
+                                        </select>
+                                    </td>
+                                    <td>
+                                        <select name="rules[{{ $ri }}][amount_type]" class="form-select form-select-sm form-select-solid amount-type-select">
+                                            <option value="total"         {{ $aType=='total'         ? 'selected' : '' }}>الإجمالي</option>
+                                            <option value="subtotal"      {{ $aType=='subtotal'      ? 'selected' : '' }}>المجموع الفرعي</option>
+                                            <option value="tax"           {{ $aType=='tax'           ? 'selected' : '' }}>الضريبة</option>
+                                            <option value="formula"       {{ $aType=='formula'       ? 'selected' : '' }}>معادلة</option>
+                                            <option value="fixed"         {{ $aType=='fixed'         ? 'selected' : '' }}>قيمة ثابتة</option>
+                                            <option value="percentage"    {{ $aType=='percentage'    ? 'selected' : '' }}>نسبة %</option>
+                                            <option value="quantity_cost" {{ $aType=='quantity_cost' ? 'selected' : '' }}>الكمية × التكلفة</option>
+                                        </select>
+                                    </td>
+                                    <td class="amount-detail-cell">
+                                        {{-- field select: shown for total/subtotal/tax/percentage/quantity_cost --}}
+                                        <select name="rules[{{ $ri }}][amount_field]" class="form-select form-select-sm form-select-solid amount-field-select {{ $aType=='formula'||$aType=='fixed' ? 'd-none' : '' }}" data-value="{{ $rule['amount_field'] ?? '' }}">
+                                            <option value="">-- --</option>
+                                        </select>
+                                        {{-- formula input: shown for formula --}}
+                                        <input type="text" name="rules[{{ $ri }}][formula]"
+                                            value="{{ $rule['formula'] ?? '' }}"
+                                            placeholder="مثال: total - paid"
+                                            class="form-control form-control-sm form-control-solid formula-input {{ $aType=='formula' ? '' : 'd-none' }}" />
+                                        {{-- value input: shown for fixed/percentage --}}
+                                        <input type="number" name="rules[{{ $ri }}][amount_value]"
+                                            value="{{ $rule['amount_value'] ?? '' }}"
+                                            class="form-control form-control-sm form-control-solid amount-value-input {{ in_array($aType,['fixed','percentage']) ? '' : 'd-none' }}"
+                                            step="0.01" min="0" />
+                                    </td>
+                                    <td><input type="number" name="rules[{{ $ri }}][sort_order]" value="{{ $rule['sort_order'] ?? 0 }}" class="form-control form-control-sm form-control-solid text-center" min="0" /></td>
+                                    <td class="text-center"><input type="checkbox" name="rules[{{ $ri }}][is_required]" value="1" class="form-check-input" {{ ($rule['is_required'] ?? true) ? 'checked' : '' }} /></td>
+                                    <td class="text-center">
+                                        <button type="button" class="btn btn-sm btn-icon btn-light-primary btn-toggle-vars me-1" title="المتغيرات"><i class="bi bi-braces fs-5"></i></button>
+                                        <button type="button" class="btn btn-sm btn-icon btn-light-danger btn-remove-rule"><i class="bi bi-x fs-4"></i></button>
+                                    </td>
+                                </tr>
+                                {{-- variables sub-row --}}
+                                <tr class="vars-row" style="display:none" data-rule-idx="{{ $ri }}">
+                                    <td colspan="8" class="bg-light-primary px-6 py-3">
+                                        <div class="d-flex align-items-center justify-content-between mb-2">
+                                            <span class="fw-bold text-primary fs-7">متغيرات القاعدة</span>
+                                            <button type="button" class="btn btn-xs btn-light-success btn-add-var px-3 py-1 fs-8">
+                                                <i class="bi bi-plus"></i> إضافة متغير
+                                            </button>
+                                        </div>
+                                        <table class="table table-sm table-bordered mb-0 vars-table">
+                                            <thead class="table-light"><tr>
+                                                <th>اسم المتغير</th>
+                                                <th>نوع المصدر</th>
+                                                <th>قيمة المصدر</th>
+                                                <th class="w-30px"></th>
+                                            </tr></thead>
+                                            <tbody class="vars-body">
+                                                @foreach($rule['variables'] ?? [] as $vi => $var)
+                                                <tr class="var-row">
+                                                    <td><input type="text" name="rules[{{ $ri }}][variables][{{ $vi }}][variable_name]" value="{{ $var['variable_name'] ?? '' }}" class="form-control form-control-sm" placeholder="مثال: unit_cost" /></td>
+                                                    <td>
+                                                        <select name="rules[{{ $ri }}][variables][{{ $vi }}][source_type]" class="form-select form-select-sm">
+                                                            <option value="field"    {{ ($var['source_type'] ?? '') == 'field'    ? 'selected' : '' }}>حقل</option>
+                                                            <option value="function" {{ ($var['source_type'] ?? '') == 'function' ? 'selected' : '' }}>دالة</option>
+                                                            <option value="subquery" {{ ($var['source_type'] ?? '') == 'subquery' ? 'selected' : '' }}>استعلام فرعي</option>
+                                                        </select>
+                                                    </td>
+                                                    <td><input type="text" name="rules[{{ $ri }}][variables][{{ $vi }}][source_value]" value="{{ $var['source_value'] ?? '' }}" class="form-control form-control-sm" placeholder="مثال: items.unit_cost" /></td>
+                                                    <td><button type="button" class="btn btn-xs btn-icon btn-light-danger btn-remove-var"><i class="bi bi-x"></i></button></td>
+                                                </tr>
                                                 @endforeach
-                                            </select>
-                                        </td>
-                                        <td>
-                                            <select name="rules[{{ $ri }}][credit_account_id]" class="form-select form-select-sm form-select-solid">
-                                                <option value="">-- --</option>
-                                                @foreach($accounts as $acc)
-                                                    <option value="{{ $acc->id }}" {{ ($rule['credit_account_id'] ?? '') == $acc->id ? 'selected' : '' }}>{{ $acc->code }} - {{ $acc->name }}</option>
-                                                @endforeach
-                                            </select>
-                                        </td>
-                                        <td>
-                                            <select name="rules[{{ $ri }}][amount_type]" class="form-select form-select-sm form-select-solid amount-type-select">
-                                                <option value="fixed"         {{ ($rule['amount_type'] ?? '') == 'fixed'         ? 'selected' : '' }}>قيمة ثابتة</option>
-                                                <option value="subtotal"      {{ ($rule['amount_type'] ?? '') == 'subtotal'      ? 'selected' : '' }}>المجموع الفرعي</option>
-                                                <option value="tax"           {{ ($rule['amount_type'] ?? '') == 'tax'           ? 'selected' : '' }}>الضريبة</option>
-                                                <option value="total"         {{ ($rule['amount_type'] ?? '') == 'total'         ? 'selected' : '' }}>الإجمالي</option>
-                                                <option value="quantity_cost" {{ ($rule['amount_type'] ?? '') == 'quantity_cost' ? 'selected' : '' }}>الكمية × التكلفة</option>
-                                                <option value="percentage"    {{ ($rule['amount_type'] ?? '') == 'percentage'    ? 'selected' : '' }}>نسبة %</option>
-                                                <option value="formula"       {{ ($rule['amount_type'] ?? '') == 'formula'       ? 'selected' : '' }}>معادلة</option>
-                                            </select>
-                                        </td>
-                                        <td><input type="number" name="rules[{{ $ri }}][amount_value]" value="{{ $rule['amount_value'] ?? '' }}" class="form-control form-control-sm form-control-solid" step="0.01" min="0" /></td>
-                                        <td>
-                                            <select name="rules[{{ $ri }}][amount_field]" class="form-select form-select-sm form-select-solid amount-field-select" data-value="{{ $rule['amount_field'] ?? '' }}">
-                                                <option value="">-- --</option>
-                                            </select>
-                                        </td>
-                                        <td>
-                                            <select name="rules[{{ $ri }}][cost_center_source]" class="form-select form-select-sm form-select-solid cc-source-select">
-                                                <option value="">-- --</option>
-                                                <option value="from_transaction" {{ ($rule['cost_center_source'] ?? '') == 'from_transaction' ? 'selected' : '' }}>من العملية</option>
-                                                <option value="fixed"            {{ ($rule['cost_center_source'] ?? '') == 'fixed'            ? 'selected' : '' }}>ثابت</option>
-                                                <option value="from_parent"      {{ ($rule['cost_center_source'] ?? '') == 'from_parent'      ? 'selected' : '' }}>من الأب</option>
-                                                <option value="from_account"     {{ ($rule['cost_center_source'] ?? '') == 'from_account'     ? 'selected' : '' }}>من الحساب</option>
-                                            </select>
-                                        </td>
-                                        <td class="fixed-cc-cell" style="{{ ($rule['cost_center_source'] ?? '') == 'fixed' ? '' : 'display:none' }}">
-                                            <select name="rules[{{ $ri }}][fixed_cost_center_id]" class="form-select form-select-sm form-select-solid">
-                                                <option value="">-- --</option>
-                                                @foreach($costCenters as $cc)
-                                                    <option value="{{ $cc->id }}" {{ ($rule['fixed_cost_center_id'] ?? '') == $cc->id ? 'selected' : '' }}>{{ $cc->name }}</option>
-                                                @endforeach
-                                            </select>
-                                        </td>
-                                        <td><input type="number" name="rules[{{ $ri }}][sort_order]" value="{{ $rule['sort_order'] ?? 0 }}" class="form-control form-control-sm form-control-solid text-center" min="0" /></td>
-                                        <td class="text-center"><input type="checkbox" name="rules[{{ $ri }}][is_required]" value="1" class="form-check-input" {{ ($rule['is_required'] ?? true) ? 'checked' : '' }} /></td>
-                                        <td><button type="button" class="btn btn-sm btn-icon btn-light-danger btn-remove-rule"><i class="bi bi-x fs-4"></i></button></td>
-                                    </tr>
-                                @endforeach
-                            @endif
+                                            </tbody>
+                                        </table>
+                                    </td>
+                                </tr>
+                            @endforeach
 
                         </tbody>
                     </table>
@@ -292,39 +319,66 @@
                         </td>
                         <td>
                             <select name="rules[__IDX__][amount_type]" class="form-select form-select-sm form-select-solid amount-type-select">
-                                <option value="fixed">قيمة ثابتة</option>
+                                <option value="total">الإجمالي</option>
                                 <option value="subtotal">المجموع الفرعي</option>
                                 <option value="tax">الضريبة</option>
-                                <option value="total">الإجمالي</option>
-                                <option value="quantity_cost">الكمية × التكلفة</option>
-                                <option value="percentage">نسبة %</option>
                                 <option value="formula">معادلة</option>
+                                <option value="fixed">قيمة ثابتة</option>
+                                <option value="percentage">نسبة %</option>
+                                <option value="quantity_cost">الكمية × التكلفة</option>
                             </select>
                         </td>
-                        <td><input type="number" name="rules[__IDX__][amount_value]" value="" class="form-control form-control-sm form-control-solid" step="0.01" min="0" /></td>
-                        <td>
+                        <td class="amount-detail-cell">
                             <select name="rules[__IDX__][amount_field]" class="form-select form-select-sm form-select-solid amount-field-select" data-value="">
                                 <option value="">-- --</option>
                             </select>
-                        </td>
-                        <td>
-                            <select name="rules[__IDX__][cost_center_source]" class="form-select form-select-sm form-select-solid cc-source-select">
-                                <option value="">-- --</option>
-                                <option value="from_transaction">من العملية</option>
-                                <option value="fixed">ثابت</option>
-                                <option value="from_parent">من الأب</option>
-                                <option value="from_account">من الحساب</option>
-                            </select>
-                        </td>
-                        <td class="fixed-cc-cell" style="display:none">
-                            <select name="rules[__IDX__][fixed_cost_center_id]" class="form-select form-select-sm form-select-solid">
-                                <option value="">-- --</option>
-                                @foreach($costCenters as $cc)<option value="{{ $cc->id }}">{{ $cc->name }}</option>@endforeach
-                            </select>
+                            <input type="text" name="rules[__IDX__][formula]" value="" placeholder="مثال: total - paid"
+                                class="form-control form-control-sm form-control-solid formula-input d-none" />
+                            <input type="number" name="rules[__IDX__][amount_value]" value=""
+                                class="form-control form-control-sm form-control-solid amount-value-input d-none"
+                                step="0.01" min="0" />
                         </td>
                         <td><input type="number" name="rules[__IDX__][sort_order]" value="0" class="form-control form-control-sm form-control-solid text-center" min="0" /></td>
                         <td class="text-center"><input type="checkbox" name="rules[__IDX__][is_required]" value="1" class="form-check-input" checked /></td>
-                        <td><button type="button" class="btn btn-sm btn-icon btn-light-danger btn-remove-rule"><i class="bi bi-x fs-4"></i></button></td>
+                        <td class="text-center">
+                            <button type="button" class="btn btn-sm btn-icon btn-light-primary btn-toggle-vars me-1" title="المتغيرات"><i class="bi bi-braces fs-5"></i></button>
+                            <button type="button" class="btn btn-sm btn-icon btn-light-danger btn-remove-rule"><i class="bi bi-x fs-4"></i></button>
+                        </td>
+                    </tr>
+                    <tr class="vars-row" style="display:none" data-rule-idx="__IDX__">
+                        <td colspan="8" class="bg-light-primary px-6 py-3">
+                            <div class="d-flex align-items-center justify-content-between mb-2">
+                                <span class="fw-bold text-primary fs-7">متغيرات القاعدة</span>
+                                <button type="button" class="btn btn-xs btn-light-success btn-add-var px-3 py-1 fs-8">
+                                    <i class="bi bi-plus"></i> إضافة متغير
+                                </button>
+                            </div>
+                            <table class="table table-sm table-bordered mb-0 vars-table">
+                                <thead class="table-light"><tr>
+                                    <th>اسم المتغير</th>
+                                    <th>نوع المصدر</th>
+                                    <th>قيمة المصدر</th>
+                                    <th class="w-30px"></th>
+                                </tr></thead>
+                                <tbody class="vars-body"></tbody>
+                            </table>
+                        </td>
+                    </tr>
+                </template>
+
+                {{-- variable row template --}}
+                <template id="var_row_template">
+                    <tr class="var-row">
+                        <td><input type="text" name="__VAR_NAME__" value="" class="form-control form-control-sm" placeholder="مثال: unit_cost" /></td>
+                        <td>
+                            <select name="__VAR_TYPE__" class="form-select form-select-sm">
+                                <option value="field">حقل</option>
+                                <option value="function">دالة</option>
+                                <option value="subquery">استعلام فرعي</option>
+                            </select>
+                        </td>
+                        <td><input type="text" name="__VAR_VALUE__" value="" class="form-control form-control-sm" placeholder="مثال: items.unit_cost" /></td>
+                        <td><button type="button" class="btn btn-xs btn-icon btn-light-danger btn-remove-var"><i class="bi bi-x"></i></button></td>
                     </tr>
                 </template>
 

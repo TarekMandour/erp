@@ -30,6 +30,9 @@ class AccountTreeSeeder extends Seeder
         AccountTree::firstOrCreate(['code' => '1103'], ['name' => 'المخزون', 'parent_id' => $currentAssets->id, 'type' => 'asset', 'level' => 2, 'is_active' => true]);
         AccountTree::firstOrCreate(['code' => '1104'], ['name' => 'العملاء (ذمم مدينة)', 'parent_id' => $currentAssets->id, 'type' => 'asset', 'level' => 2, 'is_active' => true]);
         AccountTree::firstOrCreate(['code' => '1105'], ['name' => 'مصروفات مدفوعة مقدماً', 'parent_id' => $currentAssets->id, 'type' => 'asset', 'level' => 2, 'is_active' => true]);
+        AccountTree::firstOrCreate(['code' => '1106'], ['name' => 'المحافظ الإلكترونية', 'parent_id' => $currentAssets->id, 'type' => 'asset', 'level' => 2, 'is_active' => true]);
+        AccountTree::firstOrCreate(['code' => '1107'], ['name' => 'البنك - أونلاين', 'parent_id' => $currentAssets->id, 'type' => 'asset', 'level' => 2, 'is_active' => true]);
+        AccountTree::firstOrCreate(['code' => '1108'], ['name' => 'البنك - مباشر', 'parent_id' => $currentAssets->id, 'type' => 'asset', 'level' => 2, 'is_active' => true]);
 
         // ─── Fixed Assets (Level 2) ───
         AccountTree::firstOrCreate(['code' => '1201'], ['name' => 'أثاث ومعدات', 'parent_id' => $fixedAssets->id, 'type' => 'asset', 'level' => 2, 'is_active' => true]);

@@ -37,6 +37,11 @@ class PostingScenarioRequest extends FormRequest
             'rules.*.fixed_cost_center_id'   => ['nullable', 'exists:cost_centers,id'],
             'rules.*.is_required'            => ['nullable', 'boolean'],
             'rules.*.sort_order'             => ['nullable', 'integer'],
+
+            'rules.*.variables'                  => ['nullable', 'array'],
+            'rules.*.variables.*.variable_name'  => ['required', 'string', 'max:100'],
+            'rules.*.variables.*.source_type'    => ['required', Rule::in(['field','function','subquery'])],
+            'rules.*.variables.*.source_value'   => ['required', 'string', 'max:255'],
         ];
     }
 

@@ -70,7 +70,7 @@ class Purchase extends Model
 
     public function getRemainingAttribute(): string
     {
-        return number_format((float)$this->total - (float)$this->paid, 2);
+        return (float)$this->total - (float)$this->paid;
     }
 
     public function supplier()
@@ -91,10 +91,13 @@ class Purchase extends Model
     // Auto-generate purchase number
     public static function generateNumber(): string
     {
-        $last = static::orderByDesc('id')->value('purchase_number');
-        if (!$last) return 'PO-0001';
-        $num = (int) substr($last, 3);
-        return 'PO-' . str_pad($num + 1, 4, '0', STR_PAD_LEFT);
+        do {
+            $last = static::orderByDesc('id')->value('purchase_number');
+            $num  = $last ? (int) substr($last, 3) + 1 : 1;
+            $candidate = 'PO-' . str_pad($num, 4, '0', STR_PAD_LEFT);
+        } while (static::where('purchase_number', $candidate)->exists());
+
+        return $candidate;
     }
 
     // =========================================================================

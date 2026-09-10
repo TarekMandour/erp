@@ -26,7 +26,7 @@
         <a href="{{route($route.'.edit', $data->id)}}" class="btn btn-primary me-3">
             <i class="bi bi-pencil-square fs-4 me-1"></i> تعديل
         </a>
-        <a href="{{route('finance.trans_account_trees.create')}}?account_id={{$data->id}}" class="btn btn-success me-3">
+        <a href="{{route('finance.journal_entries.create')}}" class="btn btn-success me-3">
             <i class="bi bi-plus-circle fs-4 me-1"></i> قيد جديد
         </a>
         <a href="{{route($route.'.index')}}" class="btn btn-light fw-bold">

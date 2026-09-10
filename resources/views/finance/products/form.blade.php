@@ -239,6 +239,19 @@
                 </div>
 
                 <div class="col-md-3 fv-row fv-plugins-icon-container">
+                    <label class="form-label">سعر التكلفة</label>
+                    <input type="number" class="form-control form-control-solid" name="cost_price" value="{{old('cost_price',$data->cost_price ?? 0)}}" step="0.0001" min="0" placeholder="سعر التكلفة" />
+                </div>
+
+                <div class="col-md-3 fv-row fv-plugins-icon-container">
+                    <label class="form-label">متوسط التكلفة</label>
+                    <input type="number" class="form-control form-control-solid @isset($data) bg-light-info @endisset" name="average_cost" value="{{old('average_cost',$data->average_cost ?? 0)}}" step="0.0001" min="0" placeholder="متوسط التكلفة" @isset($data) readonly @endisset />
+                    @isset($data)
+                        <div class="form-text text-muted">يُحسب تلقائياً من فواتير الشراء</div>
+                    @endisset
+                </div>
+
+                <div class="col-md-3 fv-row fv-plugins-icon-container">
                     <label class="form-label">سعر بيع الوحده</label>
                     <input type="number" class="form-control form-control-solid" name="selling_price" value="{{old('selling_price',$data->selling_price ?? 0)}}" step="0.01" min="0" placeholder="سعر بيع الوحدة"  />
                     @if(isset($pricingMode) && $pricingMode === 'inclusive')
