@@ -4,6 +4,7 @@ namespace Database\Seeders\FabricShop;
 
 use App\Events\Finance\Purchases\PurchaseEvent;
 use App\Models\Finance\Category;
+use App\Models\Finance\Customer;
 use App\Models\Finance\Product;
 use App\Models\Finance\Purchase;
 use App\Models\Finance\PurchaseItem;
