@@ -56,6 +56,7 @@ class AccountTreeSeeder extends Seeder
         AccountTree::firstOrCreate(['code' => '4001'], ['name' => 'إيرادات المبيعات', 'parent_id' => $revenue->id, 'type' => 'revenue', 'level' => 1, 'is_active' => true]);
         AccountTree::firstOrCreate(['code' => '4002'], ['name' => 'إيرادات أخرى', 'parent_id' => $revenue->id, 'type' => 'revenue', 'level' => 1, 'is_active' => true]);
         AccountTree::firstOrCreate(['code' => '4003'], ['name' => 'خصم مكتسب', 'parent_id' => $revenue->id, 'type' => 'revenue', 'level' => 1, 'is_active' => true]);
+        AccountTree::firstOrCreate(['code' => '4004'], ['name' => 'إيرادات الشحن', 'parent_id' => $revenue->id, 'type' => 'revenue', 'level' => 1, 'is_active' => true]);
 
         // ─── Expenses (Level 1) ───
         AccountTree::firstOrCreate(['code' => '5001'], ['name' => 'تكلفة البضاعة المباعة', 'parent_id' => $expenses->id, 'type' => 'expense', 'level' => 1, 'is_active' => true]);
@@ -66,6 +67,8 @@ class AccountTreeSeeder extends Seeder
         AccountTree::firstOrCreate(['code' => '5006'], ['name' => 'مصروفات شحن وتوصيل', 'parent_id' => $expenses->id, 'type' => 'expense', 'level' => 1, 'is_active' => true]);
         AccountTree::firstOrCreate(['code' => '5007'], ['name' => 'مصروفات متنوعة', 'parent_id' => $expenses->id, 'type' => 'expense', 'level' => 1, 'is_active' => true]);
         AccountTree::firstOrCreate(['code' => '5008'], ['name' => 'خصم ممنوح', 'parent_id' => $expenses->id, 'type' => 'expense', 'level' => 1, 'is_active' => true]);
+        AccountTree::firstOrCreate(['code' => '5009'], ['name' => 'خصم كوبونات', 'parent_id' => $expenses->id, 'type' => 'expense', 'level' => 1, 'is_active' => true]);
+        AccountTree::firstOrCreate(['code' => '5010'], ['name' => 'خصم عروض', 'parent_id' => $expenses->id, 'type' => 'expense', 'level' => 1, 'is_active' => true]);
 
     }
 }

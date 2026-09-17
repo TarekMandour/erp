@@ -49,6 +49,8 @@ class SafeFormulaEvaluator
             'subtotal'     => (float) ($sourceModel->subtotal ?? 0),
             'tax'          => (float) ($sourceModel->tax ?? 0),
             'discount'     => (float) ($sourceModel->discount ?? 0),
+            'coupon_discount' => (float) ($sourceModel->coupon_discount ?? 0),
+            'offer_discount'  => (float) ($sourceModel->offer_discount ?? 0),
             'shipping'     => (float) ($sourceModel->shipping_cost ?? 0),
             'paid'         => (float) ($sourceModel->paid ?? 0),
         ];

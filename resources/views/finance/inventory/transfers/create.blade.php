@@ -79,6 +79,14 @@
                         </select>
                         @error('variant_id')<div class="text-danger mt-1">{{$message}}</div>@enderror
                     </div>
+
+                    <div class="col-md-3 fv-row">
+                        <label class="form-label">الوحدة</label>
+                        <select class="form-select form-select-solid" name="unit_conversion_id" id="unit_conversion_id">
+                            <option value="">الوحدة الأساسية</option>
+                        </select>
+                        @error('unit_conversion_id')<div class="text-danger mt-1">{{$message}}</div>@enderror
+                    </div>
                 </div>
 
                 {{-- Row 3: Stock info + Quantity --}}
@@ -124,6 +132,7 @@
 $(function () {
     var getVariantsUrl = "{{ route('finance.inventory.get-variants') }}";
     var getStockUrl    = "{{ url('admin/finance/inventory/get-stock') }}";
+    var getUnitsUrl    = "{{ route('finance.inventory.transfers.ajax.units') }}";
 
     function loadAvailableStock() {
         var productId   = $('#product_id').val();
@@ -172,6 +181,7 @@ $(function () {
         var productId = $(this).val();
         $('#variant_id').empty().append('<option value="">-- اختر النوع --</option>');
         $('#variant-section').hide();
+        loadUnitConversions(productId, null);
 
         if (!productId) return;
 
@@ -185,8 +195,25 @@ $(function () {
         });
     });
 
-    // Reload stock when variant changes
+    function loadUnitConversions(productId, variantId) {
+        var $sel = $('#unit_conversion_id');
+        $sel.find('option:not([value=""])').remove();
+        if (!productId) return;
+
+        $.get(getUnitsUrl, {product_id: productId, variant_id: variantId || ''}, function (res) {
+            if (res.results && res.results.length) {
+                $.each(res.results, function (i, u) {
+                    var $opt = $('<option>', {value: u.id}).text(u.text);
+                    if (u.is_default) $opt.attr('selected', true);
+                    $sel.append($opt);
+                });
+            }
+        });
+    }
+
+    // Reload unit conversions when variant changes
     $('#variant_id').on('change', function () {
+        loadUnitConversions($('#product_id').val(), $(this).val());
         loadAvailableStock();
     });
 

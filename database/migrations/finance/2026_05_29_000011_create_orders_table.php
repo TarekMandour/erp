@@ -15,7 +15,7 @@ return new class extends Migration
             $table->foreignId('warehouse_id')->constrained('warehouses');
             $table->date('date');
             $table->date('delivery_date')->nullable();
-            $table->enum('payment_type', ['cash', 'credit', 'wallet'])->default('cash');
+            $table->enum('payment_type', ['cash', 'credit', 'installments','wallet','bank_online','bank_direct','check'])->default('cash');
             $table->enum('status', ['draft', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled'])->default('draft');
             $table->text('notes')->nullable();
             $table->string('shipping_address')->nullable();

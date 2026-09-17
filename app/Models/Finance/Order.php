@@ -135,12 +135,12 @@ class Order extends Model
 
     public function getScenarioCode(): string
     {
-        return 'SALE_' . strtoupper($this->payment_type ?? 'CASH');
+        return 'ORDER_' . strtoupper($this->payment_type ?? 'CASH');
     }
 
     public function getFallbackScenarioCode(): string
     {
-        return 'SALE_CASH';
+        return 'ORDER_CASH';
     }
 
     public function getOperationType(): string

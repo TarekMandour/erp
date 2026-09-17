@@ -6,6 +6,7 @@ use App\Models\Finance\Customer;
 use App\Models\Finance\CustomerWallet;
 use App\Models\Finance\InventoryItem;
 use App\Models\Finance\InventoryTransaction;
+use App\Models\Finance\WarehouseTransaction;
 use App\Models\Finance\Order;
 use App\Models\Finance\OrderItem;
 use Illuminate\Support\Facades\Log;
@@ -69,6 +70,12 @@ class OrderService
         // احذف أي قيد مسبق لنفس الطلب (لتجنب التكرار عند إعادة التأكيد)
         CustomerWallet::where('order_id', $order->id)->delete();
 
+        $previousBalance = CustomerWallet::where('customer_id', $order->customer_id)
+            ->latest('id')
+            ->value('balance') ?? 0;
+
+        $balance = $previousBalance + $order->total;
+
         CustomerWallet::create([
             'customer_id' => $order->customer_id,
             'order_id'    => $order->id,
@@ -76,8 +83,21 @@ class OrderService
             'description' => 'طلب بيع رقم: ' . $order->order_number,
             'debit'       => $order->total,   // مبلغ مستحق علي العميل
             'credit'      => 0,
-            'balance'     => 0,
+            'previous_balance' => $previousBalance,
+            'balance'     => $balance,
         ]);
+        if ($order->paid > 0) {
+            CustomerWallet::create([
+                'customer_id' => $order->customer_id,
+                'order_id'    => $order->id,
+                'date'        => $order->date,
+                'description' => 'عن طلب بيع رقم: ' . $order->order_number,
+                'debit'       => 0,
+                'credit'      => $order->paid,
+                'previous_balance' => $balance,
+                'balance'     => $balance - $order->paid,
+            ]);
+        }
 
         $this->recalculateCustomerBalance($order->customer_id);
     }
@@ -134,6 +154,19 @@ class OrderService
             'notes'        => 'طلب بيع #' . $item->order_id,
             'created_by'   => auth()->id(),
         ]);
+
+        WarehouseTransaction::log([
+            'warehouse_id'       => $warehouseId,
+            'product_id'         => $item->product_id,
+            'variant_id'         => $item->variant_id,
+            'unit_conversion_id' => $item->unit_conversion_id,
+            'type'               => 'out',
+            'quantity'           => $qty,
+            'unit_cost'          => $item->unit_price,
+            'reference_type'     => Order::class,
+            'reference_id'       => $item->order_id,
+            'notes'              => 'طلب بيع #' . $item->order_id,
+        ]);
     }
 
     private function increaseInventory(int $warehouseId, OrderItem $item): void
@@ -161,6 +194,19 @@ class OrderService
             'notes'        => 'إلغاء طلب بيع #' . $item->order_id,
             'created_by'   => auth()->id(),
         ]);
+
+        WarehouseTransaction::log([
+            'warehouse_id'       => $warehouseId,
+            'product_id'         => $item->product_id,
+            'variant_id'         => $item->variant_id,
+            'unit_conversion_id' => $item->unit_conversion_id,
+            'type'               => 'in',
+            'quantity'           => $qty,
+            'unit_cost'          => $item->unit_price,
+            'reference_type'     => Order::class,
+            'reference_id'       => $item->order_id,
+            'notes'              => 'إلغاء طلب بيع #' . $item->order_id,
+        ]);
     }
 
     private function resolvedQuantity(OrderItem $item): float
@@ -169,7 +215,7 @@ class OrderService
 
         if ($item->unit_conversion_id) {
             $item->loadMissing('unitConversion');
-            $factor = (float) ($item->unitConversion?->factor ?? 1);
+            $factor = (float) ($item->unitConversion?->conversion_rate ?? 1);
             $qty    = $qty * $factor;
         }
 

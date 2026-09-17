@@ -321,7 +321,18 @@ Route::group(['middleware' => ['admin']], function () {
             Route::post('/store', 'InventoryTransferController@store')->name('store');
             Route::get('/show/{id}', 'InventoryTransferController@show')->name('show');
             Route::post('/cancel/{id}', 'InventoryTransferController@cancel')->name('cancel');
+            Route::get('/ajax-units', 'InventoryTransferController@ajaxUnitConversions')->name('ajax.units');
         });
+    });
+
+    Route::name('warehouse-transactions.')->prefix('warehouse-transactions')->group(function () {
+        Route::get('/', 'WarehouseTransactionsController@index')->name('index');
+        Route::get('/create', 'WarehouseTransactionsController@create')->name('create');
+        Route::post('/store', 'WarehouseTransactionsController@store')->name('store');
+        Route::get('/edit/{id}', 'WarehouseTransactionsController@edit')->name('edit');
+        Route::post('/update', 'WarehouseTransactionsController@update')->name('update');
+        Route::post('/delete', 'WarehouseTransactionsController@destroy')->name('delete');
+        Route::get('/get-variants', 'WarehouseTransactionsController@getVariants')->name('get-variants');
     });
 
     Route::name('variant-prices.')->prefix('variant-prices')->group(function () {

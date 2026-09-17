@@ -745,7 +745,7 @@ class OrdersController extends Controller
         return response()->json([
             'results' => $conversions->map(fn($c) => [
                 'id'              => $c->id,
-                'text'            => $c->target_unit . ' (× ' . rtrim(rtrim((string)$c->conversion_rate, '0'), '.') . ' ' . $c->base_unit . ')',
+                'text'            => $c->targetUnit->name . ' (× ' . rtrim(rtrim((string)$c->conversion_rate, '0'), '.') . ' ' . $c->baseUnit->name . ')',
                 'base_unit'       => $c->base_unit,
                 'target_unit'     => $c->target_unit,
                 'conversion_rate' => (float)$c->conversion_rate,

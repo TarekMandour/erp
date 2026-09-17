@@ -233,6 +233,18 @@
 
                 <div class="menu-item">
                     <!--begin:Menu link-->
+                    <a class="menu-link {{ request()->routeIs('finance.warehouse-transactions.*') ? 'active' : '' }}" href="{{route('finance.warehouse-transactions.index')}}">
+                        <span class="menu-icon">
+                            <i class="bi bi-clock-history"></i>
+                        </span>
+                        <span class="menu-title">حركات المخزون</span>
+                        <span class="menu-arrow"></span>
+                    </a>
+                    <!--end:Menu link-->
+                </div>
+
+                <div class="menu-item">
+                    <!--begin:Menu link-->
                     <a class="menu-link {{ request()->routeIs('finance.variant-prices.*') ? 'active' : '' }}" href="{{route('finance.variant-prices.index')}}">
                         <span class="menu-icon">
                             <i class="bi bi-currency-dollar"></i>

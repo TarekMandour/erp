@@ -269,7 +269,7 @@
                             <td><input type="number" class="form-control form-control-solid form-control-sm item-price"
                                        name="items[{{$loop->index}}][unit_price]"
                                        value="{{$item->unit_price}}" min="0" step="0.01"
-                                       data-base-price="{{ $item->unitConversion ? round((float)$item->unit_price * (float)$item->unitConversion->conversion_rate, 6) : (float)$item->unit_price }}"></td>
+                                       data-base-price="{{ $item->unitConversion ? round((float)$item->unit_price / (float)$item->unitConversion->conversion_rate, 6) : (float)$item->unit_price }}"></td>
                             <td><input type="number" class="form-control form-control-solid form-control-sm item-unit-cost"
                                        name="items[{{$loop->index}}][unit_cost]"
                                        value="{{$item->unit_cost}}" min="0" step="0.0001"

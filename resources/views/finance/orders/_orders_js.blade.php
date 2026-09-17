@@ -384,7 +384,8 @@ $(function () {
         var basePrice   = parseFloat($priceInput.data('base-price') || $priceInput.val()) || 0;
         var rate        = parseFloat($opt.data('conversion-rate')) || 1;
         if (!$opt.val()) rate = 1; // no unit — revert to base price
-        $priceInput.val(rate > 0 ? (basePrice / rate).toFixed(2) : basePrice.toFixed(2));
+        // basePrice is per base unit (e.g. per meter); target-unit price = basePrice × rate (e.g. per bolt = per-meter × meters-per-bolt)
+        $priceInput.val((basePrice * rate).toFixed(2));
         calcRowTotal($row);
         updateSummary();
     });

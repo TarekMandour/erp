@@ -10,8 +10,10 @@ use Yajra\DataTables\Facades\DataTables;
 use Rap2hpoutre\FastExcel\FastExcel;
 use App\Models\Finance\InventoryItem;
 use App\Models\Finance\InventoryTransaction;
+use App\Models\Finance\WarehouseTransaction;
 use App\Models\Finance\InventoryTransfer;
 use App\Models\Finance\Product;
+use App\Models\Finance\UnitConversion;
 use App\Models\Finance\Warehouse;
 
 class InventoryTransferController extends Controller
@@ -24,7 +26,7 @@ class InventoryTransferController extends Controller
     public function index(Request $request)
     {
         if ($request->ajax()) {
-            $query = InventoryTransfer::with(['fromWarehouse', 'toWarehouse', 'product', 'variant'])
+            $query = InventoryTransfer::with(['fromWarehouse', 'toWarehouse', 'product', 'variant', 'unit'])
                 ->select('inventory_transfers.*');
 
             if ($request->filled('ffrom')) {
@@ -53,6 +55,7 @@ class InventoryTransferController extends Controller
                         : e($row->variant->sku);
                 })
                 ->addColumn('qty_display',    fn($row) => number_format((float) $row->quantity, 3))
+                ->addColumn('unit_name',      fn($row) => e($row->unit->name ?? '—'))
                 ->addColumn('status_badge',   fn($row) => $row->status_badge)
                 ->addColumn('date_display',   fn($row) => $row->created_at->format('Y-m-d H:i'))
                 ->addColumn('action', function ($row) {
@@ -101,12 +104,17 @@ class InventoryTransferController extends Controller
             }],
             'product_id'        => 'required|exists:products,id',
             'variant_id'        => 'nullable|exists:product_variants,id',
+            'unit_conversion_id' => 'nullable|exists:unit_conversions,id',
             'quantity'          => 'required|numeric|min:0.001',
             'notes'             => 'nullable|string|max:500',
         ]);
 
         $product   = Product::findOrFail($request->product_id);
         $variantId = ($product->has_variants && $request->filled('variant_id')) ? $request->variant_id : null;
+
+        $enteredQty      = (float) $request->quantity;
+        $unitConversion  = $request->filled('unit_conversion_id') ? UnitConversion::find($request->unit_conversion_id) : null;
+        $qty             = $unitConversion ? $enteredQty * (float) $unitConversion->conversion_rate : $enteredQty;
 
         // Check source stock
         $sourceItem = InventoryItem::where('warehouse_id', $request->from_warehouse_id)
@@ -115,7 +123,6 @@ class InventoryTransferController extends Controller
             ->first();
 
         $available = $sourceItem ? (float) $sourceItem->quantity : 0;
-        $qty       = (float) $request->quantity;
 
         if ($qty > $available) {
             return back()->withInput()->withErrors([
@@ -123,7 +130,7 @@ class InventoryTransferController extends Controller
             ]);
         }
 
-        DB::transaction(function () use ($request, $variantId, $qty, $sourceItem) {
+        DB::transaction(function () use ($request, $variantId, $qty, $enteredQty, $sourceItem, $product, $unitConversion) {
             $ref = InventoryTransfer::generateReference();
 
             // 1. Create transfer record
@@ -133,7 +140,9 @@ class InventoryTransferController extends Controller
                 'to_warehouse_id'   => $request->to_warehouse_id,
                 'product_id'        => $request->product_id,
                 'variant_id'        => $variantId,
-                'quantity'          => $qty,
+                'unit_id'           => $product->unit_id,
+                'unit_conversion_id' => $unitConversion?->id,
+                'quantity'          => $enteredQty,
                 'notes'             => $request->notes,
                 'status'            => 'completed',
                 'completed_at'      => now(),
@@ -179,6 +188,37 @@ class InventoryTransferController extends Controller
                 'notes'        => $transNote,
                 'created_by'   => $adminId,
             ]);
+
+            // 6. Warehouse ledger: transfer_out from source / transfer_in to destination
+            WarehouseTransaction::log([
+                'warehouse_id'   => $request->from_warehouse_id,
+                'product_id'     => $request->product_id,
+                'variant_id'     => $variantId,
+                'unit_id'        => $product->unit_id,
+                'unit_conversion_id' => $unitConversion?->id,
+                'type'           => 'transfer_out',
+                'quantity'       => $qty,
+                'unit_cost'      => 0,
+                'reference_type' => InventoryTransfer::class,
+                'reference_id'   => $transfer->id,
+                'notes'          => $transNote,
+                'created_by'     => $adminId,
+            ]);
+
+            WarehouseTransaction::log([
+                'warehouse_id'   => $request->to_warehouse_id,
+                'product_id'     => $request->product_id,
+                'variant_id'     => $variantId,
+                'unit_id'        => $product->unit_id,
+                'unit_conversion_id' => $unitConversion?->id,
+                'type'           => 'transfer_in',
+                'quantity'       => $qty,
+                'unit_cost'      => 0,
+                'reference_type' => InventoryTransfer::class,
+                'reference_id'   => $transfer->id,
+                'notes'          => $transNote,
+                'created_by'     => $adminId,
+            ]);
         });
 
         return redirect()->route($this->route . '.index')
@@ -190,7 +230,7 @@ class InventoryTransferController extends Controller
     // -------------------------------------------------------
     public function show($id)
     {
-        $transfer = InventoryTransfer::with(['fromWarehouse', 'toWarehouse', 'product', 'variant'])
+        $transfer = InventoryTransfer::with(['fromWarehouse', 'toWarehouse', 'product', 'variant', 'unit', 'unitConversion'])
             ->findOrFail($id);
 
         return view('finance.inventory.transfers.show', compact('transfer'));
@@ -216,11 +256,40 @@ class InventoryTransferController extends Controller
     }
 
     // -------------------------------------------------------
+    // AJAX: get unit conversions for a product/variant
+    // -------------------------------------------------------
+    public function ajaxUnitConversions(Request $request)
+    {
+        $productId = (int) $request->product_id;
+        $variantId = $request->filled('variant_id') ? (int) $request->variant_id : null;
+
+        $conversions = UnitConversion::with(['baseUnit', 'targetUnit'])
+            ->where('product_id', $productId)
+            ->when(
+                $variantId,
+                fn($q) => $q->where(fn($q2) => $q2->where('variant_id', $variantId)->orWhereNull('variant_id')),
+                fn($q) => $q->whereNull('variant_id')
+            )
+            ->get();
+
+        return response()->json([
+            'results' => $conversions->map(fn($c) => [
+                'id'              => $c->id,
+                'text'            => ($c->targetUnit->name ?? '—') . ' (× ' . rtrim(rtrim((string) $c->conversion_rate, '0'), '.') . ' ' . ($c->baseUnit->name ?? '—') . ')',
+                'conversion_rate' => (float) $c->conversion_rate,
+                'is_default'      => (bool) $c->is_default,
+                'allow_fractions' => (bool) $c->allow_fractions,
+                'decimal_places'  => (int) $c->decimal_places,
+            ]),
+        ]);
+    }
+
+    // -------------------------------------------------------
     // Export
     // -------------------------------------------------------
     public function export()
     {
-        $data = InventoryTransfer::with(['fromWarehouse', 'toWarehouse', 'product', 'variant'])
+        $data = InventoryTransfer::with(['fromWarehouse', 'toWarehouse', 'product', 'variant', 'unit'])
             ->orderByDesc('id')
             ->get()
             ->map(fn($r) => [
@@ -232,6 +301,7 @@ class InventoryTransferController extends Controller
                     ? (is_array($r->variant->attributes ?? []) ? implode('/', array_values($r->variant->attributes)) : $r->variant->sku)
                     : '—',
                 'الكمية'           => number_format((float) $r->quantity, 3),
+                'الوحدة'           => $r->unit->name ?? '—',
                 'الحالة'           => match ($r->status) { 'completed' => 'مكتمل', 'cancelled' => 'ملغي', default => 'معلق' },
                 'التاريخ'          => $r->created_at->format('Y-m-d H:i'),
                 'ملاحظات'          => $r->notes ?? '',

@@ -10,6 +10,7 @@ use Illuminate\Database\Seeder;
 use Database\Seeders\ClothesShop\ClothesShopSeeder;
 use Database\Seeders\ClothesShop\AccountTreeSeeder;
 use Database\Seeders\FoodShop\FoodShopSeeder;
+use Database\Seeders\FabricShop\FabricShopSeeder;
 
 class DatabaseSeeder extends Seeder
 {
@@ -34,6 +35,7 @@ class DatabaseSeeder extends Seeder
             PostingScenarioSeeder::class,
             PostingRuleSeeder::class,
             // FoodShopSeeder::class,
+            FabricShopSeeder::class,
         ]);
     }
 }

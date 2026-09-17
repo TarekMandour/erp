@@ -62,12 +62,14 @@ class TransactionsService
             return $this->createFallbackJournalEntry($sourceModel, $operationType);
         }
 
-        return DB::transaction(function () use ($sourceModel, $scenario, $rules) {
+        $entryType = $this->scenarioResolver->resolveEntryType($sourceModel, $operationType);
+
+        return DB::transaction(function () use ($sourceModel, $scenario, $rules, $entryType) {
             $groupedRules  = $rules->groupBy('rule_group');
             $createdEntries = [];
 
             foreach ($groupedRules as $groupRules) {
-                $journalEntry = $this->entryBuilder->createJournalEntryHeader($sourceModel, $scenario);
+                $journalEntry = $this->entryBuilder->createJournalEntryHeader($sourceModel, $scenario, $entryType);
 
                 // نجمع الأرصدة في الذاكرة لنتحقق من التوازن بدون استعلام إضافي
                 $totalDebit  = 0.0;
@@ -222,9 +224,9 @@ class TransactionsService
             ]);
 
             $cashAccountId = Cache::remember(
-                'account_tree_code:1110',
+                'account_tree_code:1101',
                 now()->addHour(),
-                fn () => \App\Models\Finance\AccountTree::where('code', '1110')->value('id')
+                fn () => \App\Models\Finance\AccountTree::where('code', '1101')->value('id')
             );
 
             $amount = $this->sourceModelHelper->getTransactionAmount($sourceModel);

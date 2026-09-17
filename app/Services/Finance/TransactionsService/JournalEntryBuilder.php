@@ -26,11 +26,11 @@ class JournalEntryBuilder
     /**
      * إنشاء سجل رأس القيد المحاسبي
      */
-    public function createJournalEntryHeader(Model $sourceModel, PostingScenario $scenario): JournalEntry
+    public function createJournalEntryHeader(Model $sourceModel, PostingScenario $scenario, string $entryType): JournalEntry
     {
         return JournalEntry::create([
             'entry_number'   => $this->generateEntryNumber($sourceModel, $scenario),
-            'entry_type'     => $scenario->operation_type,
+            'entry_type'     => $entryType,
             'date'           => $this->sourceModelHelper->getTransactionDate($sourceModel),
             'description'    => $this->descriptionBuilder->generateDescription($sourceModel, $scenario),
             'reference_type' => get_class($sourceModel),

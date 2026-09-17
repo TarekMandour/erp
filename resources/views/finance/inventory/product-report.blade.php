@@ -216,13 +216,13 @@
                                     @foreach($applicableUcs as $uc)
                                     @php
                                         $rate     = (float)$uc->conversion_rate;
-                                        $ucQty    = $rate > 0 ? $qty * $rate : 0;
+                                        $ucQty    = $rate > 0 ? $qty / $rate : 0;
                                         $decimals = (int)$uc->decimal_places;
                                     @endphp
                                     <div class="d-flex align-items-center gap-2 mb-1">
-                                        <span class="badge badge-light-primary">{{$uc->target_unit}}</span>
+                                        <span class="badge badge-light-primary">{{$uc->targetUnit->name}}</span>
                                         <span class="fw-bold">{{number_format($ucQty, $decimals)}}</span>
-                                        <small class="text-muted">(× {{rtrim(rtrim((string)$uc->conversion_rate,'0'),'.')}} {{$uc->base_unit}})</small>
+                                        <small class="text-muted">(× {{rtrim(rtrim((string)$uc->conversion_rate,'0'),'.')}} {{$uc->baseUnit->name}})</small>
                                     </div>
                                     @endforeach
                                 @endif
@@ -280,12 +280,12 @@
                             $ucTotalQty = $rate > 0 ? $baseQty / $rate : 0;
                         @endphp
                         <tr>
-                            <td>{{$uc->base_unit}}</td>
-                            <td class="fw-bold">{{$uc->target_unit}}</td>
+                            <td>{{$uc->baseUnit->name}}</td>
+                            <td class="fw-bold">{{$uc->targetUnit->name}}</td>
                             <td class="text-center">×&nbsp;{{rtrim(rtrim((string)$uc->conversion_rate,'0'),'.')}}</td>
                             <td class="text-center">
                                 <span class="fw-bold fs-5">{{number_format($ucTotalQty, (int)$uc->decimal_places)}}</span>
-                                <small class="text-muted d-block">من {{number_format($baseQty, 3)}} {{$uc->base_unit}}</small>
+                                <small class="text-muted d-block">من {{number_format($baseQty, 3)}} {{$uc->baseUnit->name}}</small>
                             </td>
                             <td class="text-center">
                                 @if($uc->is_default)

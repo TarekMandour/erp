@@ -102,7 +102,11 @@
                         <div class="fw-bold text-gray-600 mb-2 fs-7">الكمية المحولة</div>
                         <div class="fw-bolder fs-3 text-dark">
                             {{number_format((float)$transfer->quantity, 3)}}
-                            @if($transfer->product && $transfer->product->unit)
+                            @if($transfer->unitConversion)
+                                <span class="fs-6 text-muted ms-1">{{$transfer->unitConversion->target_unit}}</span>
+                            @elseif($transfer->unit)
+                                <span class="fs-6 text-muted ms-1">{{$transfer->unit->name}}</span>
+                            @elseif($transfer->product && $transfer->product->unit)
                             <span class="fs-6 text-muted ms-1">{{$transfer->product->unit->name}}</span>
                             @endif
                         </div>

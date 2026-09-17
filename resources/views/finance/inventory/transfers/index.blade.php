@@ -105,6 +105,7 @@
                             <th>المنتج</th>
                             <th>النوع</th>
                             <th>الكمية</th>
+                            <th>الوحدة</th>
                             <th>الحالة</th>
                             <th>التاريخ</th>
                             <th class="min-w-80px">الاجراءات</th>
@@ -143,6 +144,7 @@ $(function () {
             {data: 'product_name', orderable: false},
             {data: 'variant_info', orderable: false},
             {data: 'qty_display',  orderable: false},
+            {data: 'unit_name',    orderable: false},
             {data: 'status_badge', orderable: false},
             {data: 'date_display', orderable: false},
             {data: 'action',       orderable: false, searchable: false},

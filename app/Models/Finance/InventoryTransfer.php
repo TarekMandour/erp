@@ -14,6 +14,8 @@ class InventoryTransfer extends Model
         'to_warehouse_id',
         'product_id',
         'variant_id',
+        'unit_id',
+        'unit_conversion_id',
         'quantity',
         'notes',
         'status',
@@ -46,6 +48,16 @@ class InventoryTransfer extends Model
     public function variant()
     {
         return $this->belongsTo(ProductVariant::class, 'variant_id');
+    }
+
+    public function unit()
+    {
+        return $this->belongsTo(Unit::class);
+    }
+
+    public function unitConversion()
+    {
+        return $this->belongsTo(UnitConversion::class);
     }
 
     public function getStatusBadgeAttribute(): string

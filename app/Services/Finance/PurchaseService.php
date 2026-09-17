@@ -4,6 +4,7 @@ namespace App\Services\Finance;
 
 use App\Models\Finance\InventoryItem;
 use App\Models\Finance\InventoryTransaction;
+use App\Models\Finance\WarehouseTransaction;
 use App\Models\Finance\Product;
 use App\Models\Finance\ProductVariant;
 use App\Models\Finance\Purchase;
@@ -163,6 +164,19 @@ class PurchaseService
             'notes'        => 'فاتورة شراء #' . $item->purchase_id,
             'created_by'   => auth()->id(),
         ]);
+
+        WarehouseTransaction::log([
+            'warehouse_id'       => $warehouseId,
+            'product_id'         => $item->product_id,
+            'variant_id'         => $item->variant_id,
+            'unit_conversion_id' => $item->unit_conversion_id,
+            'type'               => 'in',
+            'quantity'           => $qty,
+            'unit_cost'          => $item->unit_cost,
+            'reference_type'     => Purchase::class,
+            'reference_id'       => $item->purchase_id,
+            'notes'              => 'فاتورة شراء #' . $item->purchase_id,
+        ]);
     }
 
     private function decreaseInventory(int $warehouseId, PurchaseItem $item): void
@@ -190,6 +204,19 @@ class PurchaseService
             'notes'        => 'إلغاء فاتورة شراء #' . $item->purchase_id,
             'created_by'   => auth()->id(),
         ]);
+
+        WarehouseTransaction::log([
+            'warehouse_id'       => $warehouseId,
+            'product_id'         => $item->product_id,
+            'variant_id'         => $item->variant_id,
+            'unit_conversion_id' => $item->unit_conversion_id,
+            'type'               => 'out',
+            'quantity'           => $qty,
+            'unit_cost'          => $item->unit_cost,
+            'reference_type'     => Purchase::class,
+            'reference_id'       => $item->purchase_id,
+            'notes'              => 'إلغاء فاتورة شراء #' . $item->purchase_id,
+        ]);
     }
 
     /**
@@ -201,7 +228,7 @@ class PurchaseService
 
         if ($item->unit_conversion_id) {
             $item->loadMissing('unitConversion');
-            $factor = (float) ($item->unitConversion?->factor ?? 1);
+            $factor = (float) ($item->unitConversion?->conversion_rate ?? 1);
             $qty    = $qty * $factor;
         }
 
