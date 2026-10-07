@@ -5,6 +5,9 @@ namespace App\Services\Finance\TransactionsService;
 use App\Models\Finance\AccountTree;
 use App\Models\Finance\JournalEntry;
 use App\Models\Finance\PostingRule;
+use App\Models\Finance\Voucher;
+use App\Models\Finance\BankAccount;
+use App\Models\Finance\Treasury;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
@@ -128,11 +131,11 @@ class PostingRuleEngine
     public function determineAccountId(PostingRule $rule, Model $sourceModel): ?int
     {
         if ($rule->debit_account_id) {
-            return $rule->debit_account_id;
+            return $this->resolveVoucherFinancialAccount($rule->debit_account_id, $sourceModel);
         }
 
         if ($rule->credit_account_id) {
-            return $rule->credit_account_id;
+            return $this->resolveVoucherFinancialAccount($rule->credit_account_id, $sourceModel);
         }
 
         if ($rule->conditions) {
@@ -143,6 +146,35 @@ class PostingRuleEngine
         }
 
         return null;
+    }
+
+    /**
+     * يستبدل الحساب المالي الثابت في سيناريو السند فقط.
+     * باقي قواعد السيناريو تظل كما هي.
+     */
+    private function resolveVoucherFinancialAccount(int $defaultAccountId, Model $sourceModel): int
+    {
+        if (! $sourceModel instanceof Voucher || ! $sourceModel->financial_account_id) {
+            return $defaultAccountId;
+        }
+
+        $selectedAccountId = (int) $sourceModel->financial_account_id;
+
+        $selectedIsFinancial = BankAccount::where('account_tree_id', $selectedAccountId)->exists()
+            || Treasury::where('account_tree_id', $selectedAccountId)
+                ->where('is_active', true)
+                ->exists();
+
+        if (! $selectedIsFinancial) {
+            return $defaultAccountId;
+        }
+
+        $defaultIsFinancial = BankAccount::where('account_tree_id', $defaultAccountId)->exists()
+            || Treasury::where('account_tree_id', $defaultAccountId)
+                ->where('is_active', true)
+                ->exists();
+
+        return $defaultIsFinancial ? $selectedAccountId : $defaultAccountId;
     }
 
     /**
