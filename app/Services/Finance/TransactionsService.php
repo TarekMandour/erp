@@ -90,7 +90,9 @@ class TransactionsService
                 $this->entryBuilder->assertBalanced($totalDebit, $totalCredit, $journalEntry->entry_number);
 
                 // إدراج جميع البنود بعملية واحدة
-                JournalEntryItem::insert($itemsToInsert);
+                foreach ($itemsToInsert as $line) {
+                    JournalEntryItem::create($line);
+                }
 
                 // تحديث الأرصدة الجارية في شجرة الحسابات
                 foreach ($itemsToInsert as $line) {
@@ -158,7 +160,9 @@ class TransactionsService
                 'updated_at'       => now(),
             ])->toArray();
 
-            JournalEntryItem::insert($reversedItems);
+            foreach ($reversedItems as $line) {
+                JournalEntryItem::create($line);
+            }
 
             // تحديث الأرصدة الجارية عكسياً
             foreach ($reversedItems as $line) {
