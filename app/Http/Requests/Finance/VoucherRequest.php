@@ -23,7 +23,8 @@ class VoucherRequest extends FormRequest
             'party_name'   => $partyType === 'other' ? 'required|string|max:200' : 'nullable|string|max:200',
             'total_amount' => 'required|numeric|min:0.01',
             'date'         => 'required|date',
-            'description'  => 'nullable|string|max:1000',
+            'description'          => 'nullable|string|max:1000',
+            'financial_account_id' => 'nullable|integer|exists:account_trees,id',
         ];
     }
 
@@ -37,7 +38,8 @@ class VoucherRequest extends FormRequest
             'party_name'   => 'اسم الطرف',
             'total_amount' => 'المبلغ الإجمالي',
             'date'         => 'التاريخ',
-            'description'  => 'البيان',
+            'description'          => 'البيان',
+            'financial_account_id' => 'البند المالي',
         ];
     }
 }
