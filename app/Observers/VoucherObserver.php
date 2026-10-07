@@ -127,6 +127,7 @@ class VoucherObserver
             'cost_center_id',
             'tax',
             'discount',
+            'financial_account_id',
         ];
 
         return (bool) array_intersect($financialFields, array_keys($voucher->getChanges()));
