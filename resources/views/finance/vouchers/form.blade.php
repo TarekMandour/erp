@@ -85,6 +85,23 @@
             </div>
 
             <div class="row mb-7">
+                <div class="col-md-12 fv-row">
+                    <label class="form-label">البند المالي</label>
+                    <select class="form-select form-select-solid" name="financial_account_id">
+                        <option value="">-- تنفيذ حسب السيناريو --</option>
+                        @foreach($financialAccounts as $account)
+                            <option value="{{ $account->id }}"
+                                {{ (string) old('financial_account_id', $data->financial_account_id ?? '') === (string) $account->id ? 'selected' : '' }}>
+                                {{ $account->parent ? $account->parent->name . ' — ' : '' }}{{ $account->name }}
+                            </option>
+                        @endforeach
+                    </select>
+                    <div class="form-text">اختياري. عند تركه فارغاً يستخدم النظام الحساب المحدد في الـ Scenario.</div>
+                    @error('financial_account_id')<div class="text-danger mt-1">{{ $message }}</div>@enderror
+                </div>
+            </div>
+
+            <div class="row mb-7">
                 <div class="col-md-4 fv-row">
                     <label class="form-label required">المبلغ الإجمالي</label>
                     <input type="number" step="0.01" min="0.01" class="form-control form-control-solid" name="total_amount"
