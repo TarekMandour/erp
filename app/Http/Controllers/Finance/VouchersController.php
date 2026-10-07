@@ -12,6 +12,9 @@ use App\Models\Finance\Customer;
 use App\Models\Finance\Supplier;
 use App\Models\Finance\CustomerWallet;
 use App\Models\Finance\SupplierWallet;
+use App\Models\Finance\AccountTree;
+use App\Models\Finance\Treasury;
+use App\Models\Finance\BankAccount;
 use App\Http\Requests\Finance\VoucherRequest;
 
 class VouchersController extends Controller
@@ -95,7 +98,14 @@ class VouchersController extends Controller
         $data      = new Voucher();
         $customers = Customer::where('account_status', 'active')->orderBy('name')->get();
         $suppliers = Supplier::where('account_status', 'active')->orderBy('name')->get();
-        return view($this->viewPath . '.create', compact('data', 'customers', 'suppliers'));
+        $financialAccounts = $this->getFinancialAccounts();
+
+        return view($this->viewPath . '.create', compact(
+            'data',
+            'customers',
+            'suppliers',
+            'financialAccounts'
+        ));
     }
 
     public function store(VoucherRequest $request)
@@ -114,7 +124,14 @@ class VouchersController extends Controller
         $data      = $this->objectModel::findOrFail($id);
         $customers = Customer::where('account_status', 'active')->orderBy('name')->get();
         $suppliers = Supplier::where('account_status', 'active')->orderBy('name')->get();
-        return view($this->viewPath . '.edit', compact('data', 'customers', 'suppliers'));
+        $financialAccounts = $this->getFinancialAccounts();
+
+        return view($this->viewPath . '.edit', compact(
+            'data',
+            'customers',
+            'suppliers',
+            'financialAccounts'
+        ));
     }
 
     public function update(VoucherRequest $request)
@@ -170,6 +187,29 @@ class VouchersController extends Controller
         }
 
         return (new FastExcel($query->orderBy('date', 'desc')->get()))->download('vouchers.csv');
+    }
+
+    /**
+     * الحسابات المالية المرتبطة فعلياً بخزائن أو حسابات بنكية.
+     */
+    private function getFinancialAccounts()
+    {
+        $treasuryAccountIds = Treasury::where('is_active', true)
+            ->whereNotNull('account_tree_id')
+            ->pluck('account_tree_id');
+
+        $bankAccountIds = BankAccount::whereNotNull('account_tree_id')
+            ->pluck('account_tree_id');
+
+        return AccountTree::with('parent')
+            ->where('is_active', true)
+            ->whereIn(
+                'id',
+                $treasuryAccountIds->merge($bankAccountIds)->unique()->values()
+            )
+            ->orderBy('parent_id')
+            ->orderBy('name')
+            ->get();
     }
 
     // ──────────────────────────────────────────────────────────────────
