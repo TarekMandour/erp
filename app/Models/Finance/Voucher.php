@@ -22,6 +22,7 @@ class Voucher extends Model
         'date',
         'description',
         'created_by',
+        'financial_account_id',
     ];
 
     protected $casts = [
