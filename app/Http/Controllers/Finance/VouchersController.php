@@ -227,8 +227,8 @@ class VouchersController extends Controller
                 'voucher_id'  => $voucher->id,
                 'date'        => $voucher->date,
                 'description' => $voucher->description ?? $voucher->type_name,
-                'debit'       => $isReceipt ? $voucher->total_amount : 0,
-                'credit'      => $isReceipt ? 0 : $voucher->total_amount,
+                'debit'      => $isReceipt ? 0 : $voucher->total_amount,
+                'credit'       => $isReceipt ? $voucher->total_amount : 0,
                 'balance'     => 0,
             ]);
             $this->recalculateCustomerBalance((int) $voucher->party_id);
@@ -243,8 +243,8 @@ class VouchersController extends Controller
                 'voucher_id'       => $voucher->id,
                 'date'             => $voucher->date,
                 'description'      => $voucher->description ?? $voucher->type_name,
-                'debit'            => $isPayment ? $voucher->total_amount : 0,
-                'credit'           => $isPayment ? 0 : $voucher->total_amount,
+                'debit'           => $isPayment ? 0 : $voucher->total_amount,
+                'credit'            => $isPayment ? $voucher->total_amount : 0,
                 'previous_balance' => 0,
                 'balance'          => 0,
             ]);
