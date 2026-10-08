@@ -130,27 +130,40 @@ class PostingRuleEngine
      */
     public function determineAccountId(PostingRule $rule, Model $sourceModel): ?int
     {
-        if ($rule->debit_account_id) {
-            return $this->resolveVoucherFinancialAccount($rule->debit_account_id, $sourceModel);
-        }
-
-        if ($rule->credit_account_id) {
-            return $this->resolveVoucherFinancialAccount($rule->credit_account_id, $sourceModel);
-        }
-
+        /*
+         * الحسابات الديناميكية (مثل العملاء والموردين) لها أولوية
+         * ولا يجب أن يتدخل فيها اختيار البند المالي.
+         */
         if ($rule->conditions) {
             $conditions = json_decode($rule->conditions, true);
+
             if (isset($conditions['account_source'])) {
                 return $this->getDynamicAccount($sourceModel, $conditions['account_source']);
             }
         }
 
-        return null;
+        $accountId = $rule->debit_account_id ?: $rule->credit_account_id;
+
+        if (! $accountId) {
+            return null;
+        }
+
+        /*
+         * financial_account_id يعمل Override فقط إذا كان الحساب الافتراضي
+         * لهذه القاعدة حساباً مالياً فعلياً (Treasury / BankAccount).
+         *
+         * بذلك:
+         * - قاعدة الصندوق/البنك يمكن استبدالها.
+         * - قاعدة العملاء/الموردين/المصروفات/الإيرادات لا تتأثر.
+         */
+        return $this->resolveVoucherFinancialAccount((int) $accountId, $sourceModel);
     }
 
     /**
-     * يستبدل الحساب المالي الثابت في سيناريو السند فقط.
-     * باقي قواعد السيناريو تظل كما هي.
+     * Override للحساب المالي فقط في سندات القبض والصرف.
+     *
+     * إذا لم يحدد المحاسب بنداً مالياً، يعود الحساب الافتراضي للـ Scenario.
+     * إذا حدده، يجب أن يكون الحساب المختار مرتبطاً بخزنة أو حساب بنكي.
      */
     private function resolveVoucherFinancialAccount(int $defaultAccountId, Model $sourceModel): int
     {
