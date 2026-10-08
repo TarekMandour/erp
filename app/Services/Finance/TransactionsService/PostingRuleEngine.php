@@ -182,12 +182,16 @@ class PostingRuleEngine
             return $defaultAccountId;
         }
 
-        $defaultIsFinancial = BankAccount::where('account_tree_id', $defaultAccountId)->exists()
-            || Treasury::where('account_tree_id', $defaultAccountId)
-                ->where('is_active', true)
-                ->exists();
-
-        return $defaultIsFinancial ? $selectedAccountId : $defaultAccountId;
+        /*
+         * القائمة في شاشة السند لا تعرض إلا الحسابات المرتبطة فعلياً
+         * بخزنة أو بحساب بنكي، لذلك بمجرد نجاح التحقق أعلاه
+         * يصبح الحساب المختار هو الحساب المالي الفعلي للعملية.
+         *
+         * لا نشترط أن يكون الحساب الافتراضي في الـ Scenario مرتبطاً
+         * بخزنة/بنك؛ فالـ Scenario قد يحتوي على حساب مالي افتراضي
+         * مثل 1101، بينما المحاسب يختار بنكاً أو خزنة مختلفة.
+         */
+        return $selectedAccountId;
     }
 
     /**
