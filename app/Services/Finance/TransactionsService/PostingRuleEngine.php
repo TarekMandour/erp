@@ -146,8 +146,7 @@ class PostingRuleEngine
         if (
             $sourceModel instanceof Voucher
             && $sourceModel->financial_account_id
-            && $defaultAccountId
-            && $this->isFinancialAccount((int) $defaultAccountId)
+            && $this->isVoucherFinancialRule($rule, $sourceModel)
         ) {
             $selectedAccountId = (int) $sourceModel->financial_account_id;
 
@@ -172,6 +171,29 @@ class PostingRuleEngine
         }
 
         return $defaultAccountId ? (int) $defaultAccountId : null;
+    }
+
+    /**
+     * هل هذه القاعدة هي الطرف المالي في سند القبض/الصرف؟
+     *
+     * سند القبض: الطرف المالي مدين.
+     * سند الصرف: الطرف المالي دائن.
+     *
+     * لا نعتمد على كون الحساب الافتراضي مربوطاً فعلياً بخزنة/بنك،
+     * لأن الحساب الافتراضي في السيناريو قد يكون حساباً عاماً (مثل 1101/1102)
+     * بينما الحساب المختار من المستخدم هو الحساب الفرعي الفعلي.
+     */
+    private function isVoucherFinancialRule(PostingRule $rule, Voucher $voucher): bool
+    {
+        if ($voucher->isReceiptType()) {
+            return (bool) $rule->debit_account_id && ! $rule->credit_account_id;
+        }
+
+        if ($voucher->isPaymentType()) {
+            return (bool) $rule->credit_account_id && ! $rule->debit_account_id;
+        }
+
+        return false;
     }
 
     /**
