@@ -130,68 +130,82 @@ class PostingRuleEngine
      */
     public function determineAccountId(PostingRule $rule, Model $sourceModel): ?int
     {
+        $defaultAccountId = $rule->debit_account_id ?: $rule->credit_account_id;
+
         /*
-         * الحسابات الديناميكية (مثل العملاء والموردين) لها أولوية
-         * ولا يجب أن يتدخل فيها اختيار البند المالي.
+         * أهم قاعدة في اختيار الحساب:
+         *
+         * إذا كان السند يحتوي على financial_account_id، وكان الحساب
+         * الافتراضي لهذه القاعدة مرتبطاً فعلياً بخزنة أو حساب بنكي،
+         * فإن اختيار المحاسب يكون هو الحساب المستخدم في القيد.
+         *
+         * نضع هذا قبل account_source لأن بعض قواعد السيناريو قد تحتوي
+         * على conditions/account_source، وإلا سيتم إرجاع الحساب الديناميكي
+         * قبل أن يصل التنفيذ إلى الـ financial account override.
+         */
+        if (
+            $sourceModel instanceof Voucher
+            && $sourceModel->financial_account_id
+            && $defaultAccountId
+            && $this->isFinancialAccount((int) $defaultAccountId)
+        ) {
+            $selectedAccountId = (int) $sourceModel->financial_account_id;
+
+            if ($this->isFinancialAccount($selectedAccountId)) {
+                return $selectedAccountId;
+            }
+        }
+
+        /*
+         * الحسابات الديناميكية مثل العملاء والموردين.
+         * لا تتأثر باختيار البند المالي.
          */
         if ($rule->conditions) {
             $conditions = json_decode($rule->conditions, true);
 
             if (isset($conditions['account_source'])) {
-                return $this->getDynamicAccount($sourceModel, $conditions['account_source']);
+                return $this->getDynamicAccount(
+                    $sourceModel,
+                    $conditions['account_source']
+                );
             }
         }
 
-        $accountId = $rule->debit_account_id ?: $rule->credit_account_id;
+        return $defaultAccountId ? (int) $defaultAccountId : null;
+    }
 
-        if (! $accountId) {
-            return null;
-        }
-
-        /*
-         * financial_account_id يعمل Override فقط إذا كان الحساب الافتراضي
-         * لهذه القاعدة حساباً مالياً فعلياً (Treasury / BankAccount).
-         *
-         * بذلك:
-         * - قاعدة الصندوق/البنك يمكن استبدالها.
-         * - قاعدة العملاء/الموردين/المصروفات/الإيرادات لا تتأثر.
-         */
-        return $this->resolveVoucherFinancialAccount((int) $accountId, $sourceModel);
+    /**
+     * هل حساب شجرة الحسابات مرتبط فعلياً بخزنة أو حساب بنكي؟
+     */
+    private function isFinancialAccount(int $accountTreeId): bool
+    {
+        return BankAccount::where('account_tree_id', $accountTreeId)->exists()
+            || Treasury::where('account_tree_id', $accountTreeId)
+                ->where('is_active', true)
+                ->exists();
     }
 
     /**
      * Override للحساب المالي فقط في سندات القبض والصرف.
      *
-     * إذا لم يحدد المحاسب بنداً مالياً، يعود الحساب الافتراضي للـ Scenario.
-     * إذا حدده، يجب أن يكون الحساب المختار مرتبطاً بخزنة أو حساب بنكي.
+     * أبقينا الدالة مستقلة لأن اختيار الحساب المالي هو سلوك خاص بالسند،
+     * بينما بقية قواعد الـ Scenario تستمر في العمل بشكلها الطبيعي.
      */
     private function resolveVoucherFinancialAccount(int $defaultAccountId, Model $sourceModel): int
     {
-        if (! $sourceModel instanceof Voucher || ! $sourceModel->financial_account_id) {
+        if (
+            ! $sourceModel instanceof Voucher
+            || ! $sourceModel->financial_account_id
+            || ! $this->isFinancialAccount($defaultAccountId)
+        ) {
             return $defaultAccountId;
         }
 
         $selectedAccountId = (int) $sourceModel->financial_account_id;
 
-        $selectedIsFinancial = BankAccount::where('account_tree_id', $selectedAccountId)->exists()
-            || Treasury::where('account_tree_id', $selectedAccountId)
-                ->where('is_active', true)
-                ->exists();
-
-        if (! $selectedIsFinancial) {
-            return $defaultAccountId;
-        }
-
-        /*
-         * القائمة في شاشة السند لا تعرض إلا الحسابات المرتبطة فعلياً
-         * بخزنة أو بحساب بنكي، لذلك بمجرد نجاح التحقق أعلاه
-         * يصبح الحساب المختار هو الحساب المالي الفعلي للعملية.
-         *
-         * لا نشترط أن يكون الحساب الافتراضي في الـ Scenario مرتبطاً
-         * بخزنة/بنك؛ فالـ Scenario قد يحتوي على حساب مالي افتراضي
-         * مثل 1101، بينما المحاسب يختار بنكاً أو خزنة مختلفة.
-         */
-        return $selectedAccountId;
+        return $this->isFinancialAccount($selectedAccountId)
+            ? $selectedAccountId
+            : $defaultAccountId;
     }
 
     /**
