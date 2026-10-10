@@ -36,7 +36,7 @@ class CategoryRequest extends FormRequest
             'description' => 'nullable',
             'sort' => 'required|min:0',
             'is_active' => 'boolean',
-            'image' => ['nullable', 'image', 'mimes:png,jpg,jpeg,svg,webp',Rule::requiredIf($this->routeIs('finance.category.store'))],
+            'image' => ['nullable', 'image', 'mimes:png,jpg,jpeg,svg,webp'],
         ];
     }
 }

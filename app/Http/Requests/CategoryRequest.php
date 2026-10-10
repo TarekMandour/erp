@@ -27,7 +27,7 @@ class CategoryRequest extends FormRequest
             'parent_id' => 'nullable',
             'sort' => 'nullable',
             'status' => 'nullable|in:active,inactive',
-            'image' => ['nullable', 'image', 'mimes:png,jpg,jpeg,svg',Rule::requiredIf($this->routeIs('admin.category.store'))],
+            'image' => ['nullable', 'image', 'mimes:png,jpg,jpeg,svg'],
         ];
     }
 }

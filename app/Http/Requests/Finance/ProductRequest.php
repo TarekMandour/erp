@@ -38,7 +38,7 @@ class ProductRequest extends FormRequest
             'is_active' => 'boolean',
             'has_expiry' => 'boolean',
             'has_variants' => 'boolean',
-            'thumbnail' => ['nullable', 'image', 'mimes:png,jpg,jpeg,svg',Rule::requiredIf($this->routeIs('finance.products.store'))],
+            'thumbnail' => ['nullable', 'image', 'mimes:png,jpg,jpeg,svg'],
             'gallery' => 'nullable|array',
             'gallery.*' => 'image|mimes:jpeg,png,jpg,gif|max:2048',
         ];

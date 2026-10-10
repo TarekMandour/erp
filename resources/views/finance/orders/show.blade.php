@@ -4,12 +4,101 @@
 @section('css')
 <style>
 @media print {
-    body > *:not(#order-invoice-wrapper) { display: none !important; }
-    #order-invoice-wrapper { display: block !important; padding: 0 !important; margin: 0 !important; }
-    #kt_header, #kt_toolbar, #kt_footer, #kt_aside, .no-print { display: none !important; }
-    th.no-print, td.no-print { display: none !important; }
-    #order-invoice { padding: 20px; }
-    .page-break { page-break-before: always; }
+    html,
+    body {
+        height: auto !important;
+        overflow: visible !important;
+        background: #fff !important;
+    }
+
+    /* إخفاء كل محتويات الصفحة */
+    body * {
+        visibility: hidden !important;
+    }
+
+    /* إظهار الفاتورة ومحتوياتها فقط */
+    #order-invoice-wrapper,
+    #order-invoice-wrapper * {
+        visibility: visible !important;
+    }
+
+    #order-invoice-wrapper {
+        display: block !important;
+        position: absolute !important;
+        top: 0 !important;
+        right: 0 !important;
+        left: 0 !important;
+        width: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        background: #fff !important;
+    }
+
+    #order-invoice {
+        display: block !important;
+        width: 100% !important;
+        margin: 0 !important;
+        padding: 15px !important;
+        background: #fff !important;
+        box-shadow: none !important;
+        border-radius: 0 !important;
+    }
+
+    .no-print,
+    #kt_header,
+    #kt_toolbar,
+    #kt_footer,
+    #kt_aside,
+    th.no-print,
+    td.no-print {
+        display: none !important;
+    }
+
+    .table-responsive {
+        overflow: visible !important;
+    }
+
+    table {
+        width: 100% !important;
+        border-collapse: collapse !important;
+    }
+
+    tr {
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+    }
+
+    .page-break {
+        page-break-before: always;
+        break-before: page;
+    }
+    #order-invoice .row.mb-8 {
+        display: flex !important;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        align-items: stretch !important;
+    }
+
+    #order-invoice .row.mb-8 > .col-md-6 {
+        display: block !important;
+        width: 50% !important;
+        max-width: 50% !important;
+        flex: 0 0 50% !important;
+    }
+
+    #order-invoice .row.mb-8 > .col-md-6 .card {
+        height: 100% !important;
+        margin-bottom: 0 !important;
+    }
+
+    #order-invoice .row.mb-8 > .col-md-6 .card-body {
+        padding: 12px !important;
+    }
+
+    @page {
+        size: A4 portrait;
+        margin: 10mm;
+    }
 }
 </style>
 @endsection
