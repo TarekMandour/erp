@@ -166,7 +166,7 @@ class PostingRuleSeeder extends Seeder
                 $rules[] = [
                     'scenario_id'=>$scenario->id,'rule_group'=>1,
                     'debit_account_id'=>$customers?->id,'credit_account_id'=>null,
-                    'amount_type'=>'formula','formula'=>'total + discount + coupon_discount + offer_discount',
+                    'amount_type'=>'field','formula'=>'total',
                     'sort_order'=>1,'is_required'=>1
                 ];
             } else {

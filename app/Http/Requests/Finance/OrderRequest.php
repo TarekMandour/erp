@@ -18,7 +18,7 @@ class OrderRequest extends FormRequest
             'warehouse_id'         => 'required|exists:warehouses,id',
             'date'                 => 'required|date',
             'delivery_date'        => 'nullable|date|after_or_equal:date',
-            'payment_type'         => 'required|in:cash,credit,wallet',
+            'payment_type'         => 'required|in:cash,credit,wallet,bank_online,bank_direct,check',
             'status'               => 'required|in:draft,confirmed,processing,shipped,delivered,cancelled',
             'notes'                => 'nullable|string|max:1000',
             'shipping_address'     => 'nullable|string|max:500',

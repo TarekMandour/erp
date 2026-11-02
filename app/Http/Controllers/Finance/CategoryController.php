@@ -149,7 +149,7 @@ class CategoryController extends Controller
     {
 
         try {
-            if ($this->objectModel->products()->exists()) {
+            if ($this->objectModel::whereIn('id', $request->id)->first()->products()->exists()) {
                 return redirect()->back()->with('error', 'Cannot delete category with products.');
             }
 
