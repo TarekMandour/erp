@@ -131,12 +131,18 @@ class AdminsController extends Controller
 
     public function destroy(Request $request)
     {
+        $ids = $this->requestIds($request);
+
+        if (in_array((int) auth()->guard('admin')->id(), $ids, true)) {
+            return $this->deleteBlocked('لا يمكنك حذف حسابك الحالي');
+        }
 
         try {
-            $this->objectModel::whereIn('id', $request->id)->delete();
+            $this->objectModel::whereIn('id', $ids)->delete();
         } catch (\Exception $e) {
-            return response()->json(['message' => 'error']);
+            return response()->json(['message' => 'error'], 500);
         }
+
         return response()->json(['message' => 'success']);
     }
 }

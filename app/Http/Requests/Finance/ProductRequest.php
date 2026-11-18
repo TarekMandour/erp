@@ -46,4 +46,14 @@ class ProductRequest extends FormRequest
             'gallery.*' => 'image|mimes:jpeg,png,jpg,gif|max:2048',
         ];
     }
+
+    public function attributes(): array
+    {
+        return [
+            'sku' => 'SKU', 'barcode' => 'الباركود', 'name' => 'اسم المنتج', 'category_id' => 'الفئة', 'brand_id' => 'الماركة',
+            'unit_id' => 'الوحدة', 'purchase_price' => 'سعر الشراء', 'selling_price' => 'سعر البيع', 'cost_price' => 'سعر التكلفة',
+            'average_cost' => 'متوسط التكلفة', 'calories' => 'السعرات الحرارية', 'tax_rate' => 'نسبة الضريبة',
+            'alert_quantity' => 'حد التنبيه', 'thumbnail' => 'الصورة', 'gallery' => 'معرض الصور',
+        ];
+    }
 }

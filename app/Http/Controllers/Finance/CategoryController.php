@@ -147,18 +147,20 @@ class CategoryController extends Controller
 
     public function destroy(Request $request)
     {
+        $rows = $this->objectModel::whereIn('id', $this->requestIds($request))->get();
 
-        try {
-            if ($this->objectModel::whereIn('id', $request->id)->first()->products()->exists()) {
-                return redirect()->back()->with('error', 'Cannot delete category with products.');
+        foreach ($rows as $row) {
+            if ($row->products()->exists()) {
+                return $this->deleteBlocked('لا يمكن حذف الفئة «' . $row->name . '» لأنها مستخدمة في منتجات');
             }
-
-            $this->objectModel::whereIn('id', $request->id)->delete();
-
-        } catch (\Exception $e) {
-            return response()->json(['message' => 'error']);
+            if ($row->children()->exists()) {
+                return $this->deleteBlocked('لا يمكن حذف الفئة «' . $row->name . '» لأن لها فئات فرعية، احذفها أو انقلها أولاً');
+            }
         }
-        return response()->json(['message' => 'success']);
+
+        $this->objectModel::whereIn('id', $rows->pluck('id'))->delete();
+
+        return response()->json(['success' => true, 'message' => 'success']);
     }
 
     public function ajaxSearch(Request $request)

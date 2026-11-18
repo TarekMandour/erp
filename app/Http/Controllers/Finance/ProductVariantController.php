@@ -222,7 +222,7 @@ class ProductVariantController extends Controller
 
         try {
             $variants = ProductVariant::where('product_id', $productId)
-                ->whereIn('id', $request->id)->get();
+                ->whereIn('id', $this->requestIds($request))->get();
 
             foreach ($variants as $key => $variant) {
 

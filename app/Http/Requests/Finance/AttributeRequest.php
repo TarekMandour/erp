@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Finance;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class AttributeRequest extends FormRequest
 {
@@ -23,7 +24,23 @@ class AttributeRequest extends FormRequest
     {
         return [
             'name' => 'required|string|max:255',
-            'code' => 'nullable',
+            // QA 2.1/2.2/2.5/2.6: الكود فريد (يشمل العناصر المحذوفة مؤقتاً لأن فهرس القاعدة يشملها)
+            'code' => ['nullable', 'string', 'max:100', Rule::unique('attributes', 'code')->ignore($this->input('id'))],
+        ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            'code.unique' => 'كود الخاصية مستخدم من قبل (قد يكون لعنصر محذوف)، اختر كوداً آخر',
+        ];
+    }
+
+    public function attributes(): array
+    {
+        return [
+            'name' => 'الاسم', 'code' => 'الكود', 'description' => 'الوصف', 'sort' => 'الترتيب',
+            'is_active' => 'الحالة', 'image' => 'الصورة', 'parent_id' => 'الفئة الأب',
         ];
     }
 }

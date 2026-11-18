@@ -108,7 +108,7 @@ class CostCenterController extends Controller
 
     public function destroy(Request $request)
     {
-        $ids = $request->ids;
+        $ids = $this->requestIds($request);
         CostCenter::whereIn('id', $ids)->delete();
         return response()->json(['success' => true]);
     }

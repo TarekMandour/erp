@@ -117,8 +117,17 @@ class WarehousesController extends Controller
 
     public function destroy(Request $request)
     {
-        $this->objectModel::whereIn('id', $request->ids)->delete();
-        return response()->json(['success' => true]);
+        $rows = $this->objectModel::whereIn('id', $this->requestIds($request))->get();
+
+        foreach ($rows as $row) {
+            if (\App\Models\Finance\InventoryItem::where('warehouse_id', $row->id)->where('quantity', '!=', 0)->exists() || \App\Models\Finance\InventoryTransaction::where('warehouse_id', $row->id)->exists() || \App\Models\Finance\WarehouseTransaction::where('warehouse_id', $row->id)->exists() || \App\Models\Finance\Purchase::where('warehouse_id', $row->id)->exists()) {
+                return $this->deleteBlocked('لا يمكن حذف المستودع «' . $row->name . '» لأن فيه مخزوناً أو حركات أو فواتير');
+            }
+        }
+
+        $this->objectModel::whereIn('id', $rows->pluck('id'))->delete();
+
+        return response()->json(['success' => true, 'message' => 'success']);
     }
 
     public function export(Request $request)

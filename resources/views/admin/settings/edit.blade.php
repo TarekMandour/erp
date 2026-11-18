@@ -521,11 +521,11 @@
                                 <div class="row fv-row mb-7">
                                     <div class="col-md-3 text-md-end">
                                         <label class="fs-6 fw-semibold form-label mt-3">
-                                            <span>description ar</span>
+                                            <span>meta description ar</span>
                                         </label>
                                     </div>
                                     <div class="col-md-9">
-                                        <textarea name="description_ar" class="form-control form-control-solid">{{$data->description_ar}}</textarea>
+                                        <textarea name="meta_description_ar" class="form-control form-control-solid">{{$data->meta_description_ar}}</textarea>
                                     </div>
                                 </div>
 
@@ -543,11 +543,11 @@
                                 <div class="row fv-row mb-7">
                                     <div class="col-md-3 text-md-end">
                                         <label class="fs-6 fw-semibold form-label mt-3">
-                                            <span>description en</span>
+                                            <span>meta description en</span>
                                         </label>
                                     </div>
                                     <div class="col-md-9">
-                                        <textarea name="description_en" class="form-control form-control-solid">{{$data->description_en}}</textarea>
+                                        <textarea name="meta_description_en" class="form-control form-control-solid">{{$data->meta_description_en}}</textarea>
                                     </div>
                                 </div>
                                 

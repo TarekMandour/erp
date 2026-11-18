@@ -170,7 +170,7 @@ class UnitConversionController extends Controller
             ->exists();
 
         if ($exists) {
-            return back()->with('error', 'تحويل الوحدة هذا موجود بالفعل')->withInput();
+            return back()->withErrors(['target_unit' => 'تحويل الوحدة هذا موجود بالفعل'])->withInput();
         }
 
         DB::beginTransaction();
@@ -236,7 +236,7 @@ class UnitConversionController extends Controller
         DB::beginTransaction();
         try {
 
-            $conversions = $this->objectModel::whereIn('id', $request->id)->get();
+            $conversions = $this->objectModel::whereIn('id', $this->requestIds($request))->get();
 
             foreach ($conversions as $key => $conversion) {
 

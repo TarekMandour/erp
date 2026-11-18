@@ -137,7 +137,7 @@ class SuppliersController extends Controller
     {
         DB::beginTransaction();
         try {
-            foreach ($this->objectModel::whereIn('id', $request->id)->get() as $item) {
+            foreach ($this->objectModel::whereIn('id', $this->requestIds($request))->get() as $item) {
                 $item->delete();
             }
             DB::commit();

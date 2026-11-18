@@ -22,13 +22,21 @@ class AdminAuthController extends Controller
             'password' => ['required'],
         ]);
 
-        if (Auth::guard('admin')->attempt($credentials)) {
+        // QA 1.6: الدخول للمدير المفعّل فقط (is_active = 1)
+        if (Auth::guard('admin')->attempt($credentials + ['is_active' => '1'])) {
             $request->session()->regenerate();
             return redirect()->intended('/admin/dashboard');
         }
 
-        return back()->withErrors([
-            'email' => 'The provided credentials do not match our records.',
+        $admin = \App\Models\Admin::where('email', $credentials['email'])->first();
+        if ($admin && \Illuminate\Support\Facades\Hash::check($credentials['password'], $admin->password)) {
+            return back()->onlyInput('email')->withErrors([
+                'email' => (string) $admin->is_active === '2' ? 'هذا الحساب محظور، تواصل مع مدير النظام' : 'هذا الحساب غير مفعّل، تواصل مع مدير النظام',
+            ]);
+        }
+
+        return back()->onlyInput('email')->withErrors([
+            'email' => 'البريد الإلكتروني أو كلمة المرور غير صحيحة',
         ]);
     }
 

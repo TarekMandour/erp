@@ -109,17 +109,18 @@ class UnitsController extends Controller
 
     public function destroy(Request $request)
     {
+        $rows = $this->objectModel::whereIn('id', $this->requestIds($request))->get();
 
-        try {
-            if ($this->objectModel->products()->exists()) {
-                return redirect()->back()->with('error', 'Cannot delete category with products.');
+        foreach ($rows as $row) {
+            $used = \App\Models\Finance\Product::withTrashed()->where('unit_id', $row->id)->exists()
+                || \App\Models\Finance\UnitConversion::where('base_unit', $row->id)->orWhere('target_unit', $row->id)->exists();
+            if ($used) {
+                return $this->deleteBlocked('لا يمكن حذف الوحدة «' . $row->name . '» لأنها مستخدمة في منتج أو تحويل وحدات');
             }
-
-            $this->objectModel::whereIn('id', $request->id)->delete();
-
-        } catch (\Exception $e) {
-            return response()->json(['message' => 'error']);
         }
-        return response()->json(['message' => 'success']);
+
+        $this->objectModel::whereIn('id', $rows->pluck('id'))->delete();
+
+        return response()->json(['success' => true, 'message' => 'success']);
     }
 }

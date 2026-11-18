@@ -17,6 +17,11 @@ class Admin extends Authenticatable implements HasMedia
 
     protected $guarded = ['id', 'created_at', 'updated_at'];
 
+    /**
+     * QA 1.5: لا تُكشف كلمة المرور أو رمز التذكر في أي رد JSON
+     */
+    protected $hidden = ['password', 'remember_token'];
+
     public function registerMediaCollections(Media $media = null): void
     {
         $this->addMediaCollection('image')
@@ -32,7 +37,8 @@ class Admin extends Authenticatable implements HasMedia
         parent::boot();
         
         static::creating(function ($model) {
-            if (empty($model->is_active)) {
+            // القيمة '0' (غير مفعل) صالحة؛ الافتراضي مفعل فقط إذا لم تُرسل الحالة
+            if ($model->is_active === null || $model->is_active === '') {
                 $model->is_active = 1;
             }
         });

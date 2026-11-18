@@ -139,17 +139,16 @@ class BrandsController extends Controller
 
     public function destroy(Request $request)
     {
+        $rows = $this->objectModel::whereIn('id', $this->requestIds($request))->get();
 
-        try {
-            if ($this->objectModel::whereIn('id', $request->id)->first()->products()->exists()) {
-                return redirect()->back()->with('error', 'Cannot delete category with products.');
+        foreach ($rows as $row) {
+            if ($row->products()->exists()) {
+                return $this->deleteBlocked('لا يمكن حذف الماركة «' . $row->name . '» لأنها مستخدمة في منتجات');
             }
-
-            $this->objectModel::whereIn('id', $request->id)->delete();
-
-        } catch (\Exception $e) {
-            return response()->json(['message' => 'error']);
         }
-        return response()->json(['message' => 'success']);
+
+        $this->objectModel::whereIn('id', $rows->pluck('id'))->delete();
+
+        return response()->json(['success' => true, 'message' => 'success']);
     }
 }

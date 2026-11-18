@@ -28,5 +28,12 @@ class CustomerRequest extends FormRequest
             'tax_number'     => 'nullable|string|max:100',
         ];
     }
-}
 
+    public function attributes(): array
+    {
+        return [
+            'customer_code' => 'كود العميل', 'name' => 'اسم العميل', 'phone' => 'الهاتف', 'email' => 'البريد الإلكتروني',
+            'join_date' => 'تاريخ الانضمام', 'account_status' => 'حالة الحساب', 'address' => 'العنوان',
+        ];
+    }
+}

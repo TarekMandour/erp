@@ -80,8 +80,17 @@ class BanksController extends Controller
 
     public function destroy(Request $request)
     {
-        $this->objectModel::whereIn('id', $request->ids)->delete();
-        return response()->json(['success' => true]);
+        $rows = $this->objectModel::whereIn('id', $this->requestIds($request))->get();
+
+        foreach ($rows as $row) {
+            if (\App\Models\Finance\BankAccount::where('bank_id', $row->id)->exists()) {
+                return $this->deleteBlocked('لا يمكن حذف البنك «' . $row->name . '» لأن له حسابات بنكية');
+            }
+        }
+
+        $this->objectModel::whereIn('id', $rows->pluck('id'))->delete();
+
+        return response()->json(['success' => true, 'message' => 'success']);
     }
 
     public function export(Request $request)

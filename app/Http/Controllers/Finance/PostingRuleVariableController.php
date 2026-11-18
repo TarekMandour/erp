@@ -101,7 +101,7 @@ class PostingRuleVariableController extends Controller
 
     public function destroy(Request $request)
     {
-        PostingRuleVariable::whereIn('id', $request->ids)->delete();
+        PostingRuleVariable::whereIn('id', $this->requestIds($request))->delete();
         return response()->json(['success' => true]);
     }
 }

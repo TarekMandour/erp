@@ -179,7 +179,7 @@ class PostingScenarioController extends Controller
 
     public function destroy(Request $request)
     {
-        PostingScenario::whereIn('id', $request->ids)->delete();
+        PostingScenario::whereIn('id', $this->requestIds($request))->delete();
         return response()->json(['success' => true]);
     }
 

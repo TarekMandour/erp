@@ -101,8 +101,17 @@ class TreasuriesController extends Controller
 
     public function destroy(Request $request)
     {
-        $this->objectModel::whereIn('id', $request->ids)->delete();
-        return response()->json(['success' => true]);
+        $rows = $this->objectModel::whereIn('id', $this->requestIds($request))->get();
+
+        foreach ($rows as $row) {
+            if (\App\Models\Finance\TreasuryTransaction::where('treasury_id', $row->id)->exists()) {
+                return $this->deleteBlocked('لا يمكن حذف الخزنة «' . $row->name . '» لأن لها حركات');
+            }
+        }
+
+        $this->objectModel::whereIn('id', $rows->pluck('id'))->delete();
+
+        return response()->json(['success' => true, 'message' => 'success']);
     }
 
     public function export(Request $request)

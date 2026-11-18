@@ -294,47 +294,38 @@ class ProductsController extends Controller
 
     public function destroy(Request $request)
     {
-        DB::beginTransaction();
+        $products = $this->objectModel::with(['variants'])->whereIn('id', $this->requestIds($request))->get();
 
-        try {
-            $products = $this->objectModel::with(['variants'])->whereIn('id', $request->id)->get();
-            // $products = $this->objectModel::with(['variants', 'orderItems'])->whereIn('id', $request->id)->get();
+        // QA 2.15: إعادة تفعيل فحوص المبيعات والمخزون قبل الحذف
+        foreach ($products as $product) {
+            $reason = match (true) {
+                $product->orderItems()->exists()    => 'له مبيعات',
+                $product->purchaseItems()->exists() => 'له فواتير شراء',
+                \App\Models\Finance\InventoryItem::where('product_id', $product->id)->where('quantity', '!=', 0)->exists() => 'له رصيد مخزون',
+                \App\Models\Finance\InventoryTransaction::where('product_id', $product->id)->exists()
+                    || \App\Models\Finance\WarehouseTransaction::where('product_id', $product->id)->exists() => 'له حركات مخزون',
+                default => null,
+            };
 
-            foreach ($products as $key => $product) {
-                // التحقق من وجود مبيعات
-                // if ($product->orderItems()->count() > 0) {
-                //     return back()->with('message', 'لا يمكن حذف المنتج ('.$product->name.') لأنه مرتبط بمبيعات')->with('status', 'error');
-                // }
-
-                // التحقق من وجود مخزون
-                // $hasStock = false;
-                // foreach ($product->variants as $variant) {
-                //     if ($variant->inventoryLots()->sum('quantity') > 0) {
-                //         $hasStock = true;
-                //         break;
-                //     }
-                // }
-
-                // if ($hasStock) {
-                //     return back()->with('message', 'لا يمكن حذف المنتج لأنه يحتوي على مخزون')->with('status', 'error');
-                // }
-
-                // حذف الأنواع أولاً
-                $product->variants()->delete();
-
-                // حذف الصور
-                $product->clearMediaCollection('product_images');
-
-                // حذف المنتج
-                $product->delete();
-
-                DB::commit();
+            if ($reason) {
+                return $this->deleteBlocked('لا يمكن حذف المنتج «' . $product->name . '» لأنه ' . $reason);
             }
-
-        } catch (\Exception $e) {
-            return response()->json(['status' => 'error','message' => "عفوا لم يتم الحذف"]);
         }
-        return response()->json(['status' => 'success','message' => 'تم الحذف بنجاح']);
+
+        DB::beginTransaction();
+        try {
+            foreach ($products as $product) {
+                $product->variants()->delete();
+                $product->clearMediaCollection('product_images');
+                $product->delete();
+            }
+            DB::commit();
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['status' => 'error', 'message' => 'عفوا لم يتم الحذف'], 500);
+        }
+
+        return response()->json(['status' => 'success', 'message' => 'تم الحذف بنجاح']);
     }
 
     /**
@@ -356,43 +347,38 @@ class ProductsController extends Controller
         }
 
         try {
-            $prefix = '';
+            // QA 2.16: البادئة من الفئة والماركة المختارتين في النموذج (كانت ثابتة على 1)
+            $parts = [];
 
-            if (1) {
-                $category = Category::find(1);
+            if ($request->filled('category_id')) {
+                $category = Category::find($request->category_id);
                 if ($category && $category->code) {
-                    $prefix .= substr($category->code, 0, 3).'-';
+                    $parts[] = strtoupper(substr($category->code, 0, 3));
                 }
             }
 
-            if (1) {
-                $brand = Brand::find(1);
+            if ($request->filled('brand_id')) {
+                $brand = Brand::find($request->brand_id);
                 if ($brand && $brand->code) {
-                    $prefix .= substr($brand->code, 0, 3);
+                    $parts[] = strtoupper(substr($brand->code, 0, 3));
                 }
             }
 
-            if (empty($prefix)) {
-                $prefix = 'PROD';
-            }
+            $prefix = $parts ? implode('-', $parts) : 'PROD';
 
-            // البحث عن آخر SKU بنفس البادئة
-            $lastProduct = Product::where('sku', 'LIKE', $prefix . '%')
-                ->orderBy('sku', 'desc')
-                ->first();
-            if ($lastProduct) {
-                $lastNumber = intval(substr($lastProduct->sku, strlen($prefix)+1));
-                $nextNumber = $lastNumber + 1;
-            } else {
-                $nextNumber = 1;
-            }
+            // أعلى رقم مستخدم بنفس البادئة (يشمل المحذوف مؤقتاً لأن SKU فريد في الجدول)
+            $nextNumber = Product::withTrashed()
+                ->where('sku', 'LIKE', $prefix . '-%')
+                ->pluck('sku')
+                ->map(fn ($sku) => (int) substr($sku, strlen($prefix) + 1))
+                ->max() + 1;
 
-            $generatedSku = $prefix .'-'. str_pad($nextNumber, 4, '0', STR_PAD_LEFT);
+            $generatedSku = $prefix . '-' . str_pad($nextNumber, 4, '0', STR_PAD_LEFT);
 
-            // التأكد من أنه فريد
-            while (Product::where('sku', $generatedSku)->exists()) {
+            // التأكد من أنه فريد (بنفس الصيغة دائماً)
+            while (Product::withTrashed()->where('sku', $generatedSku)->exists()) {
                 $nextNumber++;
-                $generatedSku = $prefix . str_pad($nextNumber, 4, '0', STR_PAD_LEFT);
+                $generatedSku = $prefix . '-' . str_pad($nextNumber, 4, '0', STR_PAD_LEFT);
             }
 
             return response()->json([

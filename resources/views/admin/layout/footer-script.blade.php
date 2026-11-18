@@ -33,6 +33,12 @@
 				};
 				toastr.success("{{session()->get("message")}}");
 			@endif
+			// رسائل رفض الحذف (422) لكل شاشات القوائم التي لا تعالج الخطأ بنفسها (QA الدفعة 5)
+			$(document).ajaxError(function (event, xhr, settings) {
+				if (settings.error || xhr.status !== 422 || !xhr.responseJSON || !xhr.responseJSON.message || xhr.responseJSON.errors) return;
+				toastr.options = { "positionClass": "toastr-top-left" };
+				toastr.error(xhr.responseJSON.message);
+			});
 			@if(session('warning'))
 				Swal.fire({ icon: 'warning', title: 'تنبيه', text: @json(session('warning')), confirmButtonText: 'موافق' });
 			@endif

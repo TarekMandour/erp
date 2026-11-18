@@ -109,17 +109,22 @@ class AttributesController extends Controller
 
     public function destroy(Request $request)
     {
+        $rows = $this->objectModel::whereIn('id', $this->requestIds($request))->get();
 
-        try {
-            if ($this->objectModel->products()->exists()) {
-                return redirect()->back()->with('error', 'Cannot delete category with products.');
+        // الخصائص تُخزَّن في product_variants.attributes كـ JSON مفاتيحه معرّفات الخصائص
+        $usedKeys = \App\Models\Finance\ProductVariant::pluck('attributes')
+            ->flatMap(fn ($attrs) => array_keys((array) $attrs))
+            ->map(fn ($k) => (int) $k)
+            ->unique();
+
+        foreach ($rows as $row) {
+            if ($usedKeys->contains((int) $row->id)) {
+                return $this->deleteBlocked('لا يمكن حذف الخاصية «' . $row->name . '» لأنها مستخدمة في متغيرات المنتجات');
             }
-
-            $this->objectModel::whereIn('id', $request->id)->delete();
-
-        } catch (\Exception $e) {
-            return response()->json(['message' => 'error']);
         }
-        return response()->json(['message' => 'success']);
+
+        $this->objectModel::whereIn('id', $rows->pluck('id'))->delete();
+
+        return response()->json(['success' => true, 'message' => 'success']);
     }
 }

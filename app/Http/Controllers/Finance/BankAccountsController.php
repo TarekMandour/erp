@@ -96,8 +96,17 @@ class BankAccountsController extends Controller
 
     public function destroy(Request $request)
     {
-        $this->objectModel::whereIn('id', $request->ids)->delete();
-        return response()->json(['success' => true]);
+        $rows = $this->objectModel::whereIn('id', $this->requestIds($request))->get();
+
+        foreach ($rows as $row) {
+            if (\App\Models\Finance\BankTransaction::where('bank_account_id', $row->id)->exists()) {
+                return $this->deleteBlocked('لا يمكن حذف الحساب البنكي «' . $row->account_number . '» لأن له حركات');
+            }
+        }
+
+        $this->objectModel::whereIn('id', $rows->pluck('id'))->delete();
+
+        return response()->json(['success' => true, 'message' => 'success']);
     }
 
     public function export(Request $request)
