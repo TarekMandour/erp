@@ -46,63 +46,26 @@ class PostingRuleSeeder extends Seeder
         // المشتريات - الاحتفاظ بالقواعد الحالية
         // ================================================================
 
-        // 1. شراء نقدي
-        $scenario = PostingScenario::where('code', 'PURCHASE_CASH')->first();
-        if ($scenario) {
+        // قواعد موحدة لكل أنواع الدفع (QA 12.4 / 12.5):
+        //   مدين المخزون (subtotal صافٍ بعد الخصم) + مدين الضريبة
+        //   دائن حساب الدفع بالمبلغ المدفوع (paid) + دائن الموردين بالباقي (total - paid)
+        $purchasePaymentAccounts = [
+            'PURCHASE_CASH'         => $cash?->id,
+            'PURCHASE_CREDIT'       => $cash?->id,
+            'PURCHASE_INSTALLMENTS' => $cash?->id,
+            'PURCHASE_WALLET'       => $wallet?->id,
+            'PURCHASE_BANK_ONLINE'  => $bankOnline?->id,
+            'PURCHASE_BANK_DIRECT'  => $bankDirect?->id,
+            'PURCHASE_CHECK'        => $checkPayable?->id,
+        ];
+
+        foreach ($purchasePaymentAccounts as $code => $payAccountId) {
+            $scenario = PostingScenario::where('code', $code)->first();
+            if (! $scenario) continue;
+
             $rules[] = ['scenario_id'=>$scenario->id,'rule_group'=>1,'debit_account_id'=>$inventory?->id,'credit_account_id'=>null,'amount_type'=>'subtotal','amount_field'=>'subtotal','sort_order'=>1,'is_required'=>1];
             $rules[] = ['scenario_id'=>$scenario->id,'rule_group'=>1,'debit_account_id'=>$vatPayable?->id,'credit_account_id'=>null,'amount_type'=>'tax','amount_field'=>'tax','sort_order'=>2,'is_required'=>1];
-            $rules[] = ['scenario_id'=>$scenario->id,'rule_group'=>1,'debit_account_id'=>null,'credit_account_id'=>$cash?->id,'amount_type'=>'total','amount_field'=>'total','sort_order'=>3,'is_required'=>1];
-        }
-
-        // 2. شراء آجل
-        $scenario = PostingScenario::where('code', 'PURCHASE_CREDIT')->first();
-        if ($scenario) {
-            $rules[] = ['scenario_id'=>$scenario->id,'rule_group'=>1,'debit_account_id'=>$inventory?->id,'credit_account_id'=>null,'amount_type'=>'subtotal','amount_field'=>'subtotal','sort_order'=>1,'is_required'=>1];
-            $rules[] = ['scenario_id'=>$scenario->id,'rule_group'=>1,'debit_account_id'=>$vatPayable?->id,'credit_account_id'=>null,'amount_type'=>'tax','amount_field'=>'tax','sort_order'=>2,'is_required'=>1];
-            $rules[] = ['scenario_id'=>$scenario->id,'rule_group'=>1,'debit_account_id'=>null,'credit_account_id'=>$suppliers?->id,'amount_type'=>'total','amount_field'=>'total','sort_order'=>3,'is_required'=>1];
-        }
-
-        // 3. شراء بالتقسيط
-        $scenario = PostingScenario::where('code', 'PURCHASE_INSTALLMENTS')->first();
-        if ($scenario) {
-            $rules[] = ['scenario_id'=>$scenario->id,'rule_group'=>1,'debit_account_id'=>$inventory?->id,'credit_account_id'=>null,'amount_type'=>'formula','formula'=>'subtotal - discount','sort_order'=>1,'is_required'=>1];
-            $rules[] = ['scenario_id'=>$scenario->id,'rule_group'=>1,'debit_account_id'=>$vatPayable?->id,'credit_account_id'=>null,'amount_type'=>'tax','amount_field'=>'tax','sort_order'=>2,'is_required'=>1];
-            $rules[] = ['scenario_id'=>$scenario->id,'rule_group'=>1,'debit_account_id'=>null,'credit_account_id'=>$suppliers?->id,'amount_type'=>'total','amount_field'=>'total','sort_order'=>3,'is_required'=>1];
-        }
-
-        // 4. شراء بالمحفظة
-        $scenario = PostingScenario::where('code', 'PURCHASE_WALLET')->first();
-        if ($scenario) {
-            $rules[] = ['scenario_id'=>$scenario->id,'rule_group'=>1,'debit_account_id'=>$inventory?->id,'credit_account_id'=>null,'amount_type'=>'formula','formula'=>'subtotal - discount','sort_order'=>1,'is_required'=>1];
-            $rules[] = ['scenario_id'=>$scenario->id,'rule_group'=>1,'debit_account_id'=>$vatPayable?->id,'credit_account_id'=>null,'amount_type'=>'tax','amount_field'=>'tax','sort_order'=>2,'is_required'=>1];
-            $rules[] = ['scenario_id'=>$scenario->id,'rule_group'=>1,'debit_account_id'=>null,'credit_account_id'=>$wallet?->id,'amount_type'=>'total','amount_field'=>'paid','sort_order'=>3,'is_required'=>1];
-            $rules[] = ['scenario_id'=>$scenario->id,'rule_group'=>1,'debit_account_id'=>null,'credit_account_id'=>$suppliers?->id,'amount_type'=>'formula','formula'=>'total - paid','sort_order'=>4,'is_required'=>1];
-        }
-
-        // 5. شراء بنك أونلاين
-        $scenario = PostingScenario::where('code', 'PURCHASE_BANK_ONLINE')->first();
-        if ($scenario) {
-            $rules[] = ['scenario_id'=>$scenario->id,'rule_group'=>1,'debit_account_id'=>$inventory?->id,'credit_account_id'=>null,'amount_type'=>'formula','formula'=>'subtotal - discount','sort_order'=>1,'is_required'=>1];
-            $rules[] = ['scenario_id'=>$scenario->id,'rule_group'=>1,'debit_account_id'=>$vatPayable?->id,'credit_account_id'=>null,'amount_type'=>'tax','amount_field'=>'tax','sort_order'=>2,'is_required'=>1];
-            $rules[] = ['scenario_id'=>$scenario->id,'rule_group'=>1,'debit_account_id'=>null,'credit_account_id'=>$bankOnline?->id,'amount_type'=>'total','amount_field'=>'paid','sort_order'=>3,'is_required'=>1];
-            $rules[] = ['scenario_id'=>$scenario->id,'rule_group'=>1,'debit_account_id'=>null,'credit_account_id'=>$suppliers?->id,'amount_type'=>'formula','formula'=>'total - paid','sort_order'=>4,'is_required'=>1];
-        }
-
-        // 6. شراء بنك مباشر
-        $scenario = PostingScenario::where('code', 'PURCHASE_BANK_DIRECT')->first();
-        if ($scenario) {
-            $rules[] = ['scenario_id'=>$scenario->id,'rule_group'=>1,'debit_account_id'=>$inventory?->id,'credit_account_id'=>null,'amount_type'=>'formula','formula'=>'subtotal - discount','sort_order'=>1,'is_required'=>1];
-            $rules[] = ['scenario_id'=>$scenario->id,'rule_group'=>1,'debit_account_id'=>$vatPayable?->id,'credit_account_id'=>null,'amount_type'=>'tax','amount_field'=>'tax','sort_order'=>2,'is_required'=>1];
-            $rules[] = ['scenario_id'=>$scenario->id,'rule_group'=>1,'debit_account_id'=>null,'credit_account_id'=>$bankDirect?->id,'amount_type'=>'total','amount_field'=>'paid','sort_order'=>3,'is_required'=>1];
-            $rules[] = ['scenario_id'=>$scenario->id,'rule_group'=>1,'debit_account_id'=>null,'credit_account_id'=>$suppliers?->id,'amount_type'=>'formula','formula'=>'total - paid','sort_order'=>4,'is_required'=>1];
-        }
-
-        // 7. شراء بشيك
-        $scenario = PostingScenario::where('code', 'PURCHASE_CHECK')->first();
-        if ($scenario) {
-            $rules[] = ['scenario_id'=>$scenario->id,'rule_group'=>1,'debit_account_id'=>$inventory?->id,'credit_account_id'=>null,'amount_type'=>'formula','formula'=>'subtotal - discount','sort_order'=>1,'is_required'=>1];
-            $rules[] = ['scenario_id'=>$scenario->id,'rule_group'=>1,'debit_account_id'=>$vatPayable?->id,'credit_account_id'=>null,'amount_type'=>'tax','amount_field'=>'tax','sort_order'=>2,'is_required'=>1];
-            $rules[] = ['scenario_id'=>$scenario->id,'rule_group'=>1,'debit_account_id'=>null,'credit_account_id'=>$checkPayable?->id,'amount_type'=>'total','amount_field'=>'paid','sort_order'=>3,'is_required'=>1];
+            $rules[] = ['scenario_id'=>$scenario->id,'rule_group'=>1,'debit_account_id'=>null,'credit_account_id'=>$payAccountId,'amount_type'=>'total','amount_field'=>'paid','sort_order'=>3,'is_required'=>1];
             $rules[] = ['scenario_id'=>$scenario->id,'rule_group'=>1,'debit_account_id'=>null,'credit_account_id'=>$suppliers?->id,'amount_type'=>'formula','formula'=>'total - paid','sort_order'=>4,'is_required'=>1];
         }
 

@@ -17,6 +17,12 @@
     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
 </div>
 @endif
+@if(session('error'))
+<div class="alert alert-danger alert-dismissible fade show mb-5">
+    {{session('error')}}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+@endif
 
 {{-- ── Header card ────────────────────────────────────── --}}
 <div class="card card-flush py-4 mb-7">
@@ -87,6 +93,20 @@
                     @endforeach
                 </select>
                 @error('payment_type')<div class="text-danger fs-7 mt-1">{{$message}}</div>@enderror
+            </div>
+
+            {{-- Bank account (wallet / bank transfer) --}}
+            @php($bankAccountsList = \App\Models\Finance\BankAccount::with('bank:id,name')->get())
+            <div class="col-md-3 fv-row" id="bank_account_wrap">
+                <label class="form-label">الحساب البنكي</label>
+                <select class="form-select form-select-solid" name="bank_account_id" data-kt-select2="true" data-minimum-results-for-search="Infinity" data-placeholder="الحساب الافتراضي للسيناريو" data-allow-clear="true">
+                    <option value="">الحساب الافتراضي للسيناريو</option>
+                    @foreach($bankAccountsList as $ba)
+                        <option value="{{$ba->id}}" {{old('bank_account_id', $isEdit ? $d->bank_account_id : '') == $ba->id ? 'selected' : ''}}>{{($ba->bank?->name ? $ba->bank->name . ' - ' : '') . $ba->account_number}}</option>
+                    @endforeach
+                </select>
+                <div class="text-muted fs-8 mt-1">للمحفظة والتحويل البنكي: يُرحَّل المدفوع على الحساب البنكي المختار ويظهر في سجل حركاته.</div>
+                @error('bank_account_id')<div class="text-danger fs-7 mt-1">{{$message}}</div>@enderror
             </div>
 
             {{-- Status --}}

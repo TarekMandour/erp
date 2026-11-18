@@ -54,9 +54,12 @@ class SourceModelHelper
             return $sourceModel->journal_entry_id;
         }
 
+        // آخر قيد فعّال (غير عكسي وغير ملغى) — بعد كل تعديل يبقى القيد القديم canceled
         return JournalEntry::where('reference_type', get_class($sourceModel))
             ->where('reference_id', $sourceModel->id)
             ->where('is_reversed', false)
+            ->where('status', '!=', 'canceled')
+            ->orderByDesc('id')
             ->value('id');
     }
 

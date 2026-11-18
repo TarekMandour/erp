@@ -17,6 +17,7 @@ class Purchase extends Model
         'date',
         'due_date',
         'payment_type',
+        'bank_account_id',
         'status',
         'notes',
         'subtotal',
@@ -83,6 +84,11 @@ class Purchase extends Model
         return $this->belongsTo(Warehouse::class);
     }
 
+    public function bankAccount()
+    {
+        return $this->belongsTo(BankAccount::class);
+    }
+
     public function items()
     {
         return $this->hasMany(PurchaseItem::class);
@@ -91,10 +97,15 @@ class Purchase extends Model
     // Auto-generate purchase number
     public static function generateNumber(): string
     {
+        // أعلى رقم مستخدم (وليس رقم آخر صف) ثم التقدّم حتى رقم غير مستخدم
+        // (الحلقة القديمة كانت تعيد نفس المرشّح فتتعلق إذا كان رقم آخر صف + 1 محجوزاً)
+        $num = (int) static::where('purchase_number', 'like', 'PO-%')
+            ->pluck('purchase_number')
+            ->map(fn ($n) => (int) substr($n, 3))
+            ->max() + 1;
+
         do {
-            $last = static::orderByDesc('id')->value('purchase_number');
-            $num  = $last ? (int) substr($last, 3) + 1 : 1;
-            $candidate = 'PO-' . str_pad($num, 4, '0', STR_PAD_LEFT);
+            $candidate = 'PO-' . str_pad($num++, 4, '0', STR_PAD_LEFT);
         } while (static::where('purchase_number', $candidate)->exists());
 
         return $candidate;

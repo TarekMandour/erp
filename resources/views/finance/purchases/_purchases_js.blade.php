@@ -215,7 +215,7 @@ $(function () {
             $costInput.attr('data-base-cost', basePrice);
             // Apply current unit rate right away
             var rate = ($unitOpt.val()) ? (parseFloat($unitOpt.attr('data-conversion-rate')) || 1) : 1;
-            $costInput.val((basePrice / rate).toFixed(2));
+            $costInput.val((basePrice * rate).toFixed(2));
             calcRowTotal($row);
         });
 
@@ -234,9 +234,9 @@ $(function () {
         var rate       = parseFloat($opt.attr('data-conversion-rate')) || 1;
         if (!$opt.val()) rate = 1;
         
-        // In purchases: baseCost = cost per base unit; dividing gives cost per converted unit
-        // e.g. average_cost=100 (per piece), rate=2 (1 box = 2 pieces) → cost per box = 100/2 = 50
-        $costInput.val((baseCost / rate).toFixed(2));
+        // baseCost = cost per base unit; quantity in the converted unit = rate base units
+        // e.g. average_cost=100 (per piece), rate=2 (1 box = 2 pieces) → cost per box = 100×2 = 200
+        $costInput.val((baseCost * rate).toFixed(2));
         calcRowTotal($row);
     });
 
@@ -278,9 +278,19 @@ $(function () {
         $('#paid_input').val(total.toFixed(2));
     });
 
+    // ── Bank account: only for wallet / bank transfers ──
+    function toggleBankAccount() {
+        var type = $('select[name="payment_type"]').val();
+        var show = ['wallet', 'bank_online', 'bank_direct'].indexOf(type) !== -1;
+        $('#bank_account_wrap').toggle(show);
+        if (!show) $('select[name="bank_account_id"]').val('').trigger('change.select2');
+    }
+    $('select[name="payment_type"]').on('change', toggleBankAccount);
+    toggleBankAccount();
+
     // ── Initial summary ───────────────────────
     updateSummary();
-    
+
 });
 </script>
 @endsection

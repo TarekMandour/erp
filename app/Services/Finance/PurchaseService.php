@@ -11,6 +11,7 @@ use App\Models\Finance\Purchase;
 use App\Models\Finance\PurchaseItem;
 use App\Models\Finance\Supplier;
 use App\Models\Finance\SupplierWallet;
+use App\Helpers\Helper;
 use Illuminate\Support\Facades\Log;
 
 class PurchaseService
@@ -20,20 +21,23 @@ class PurchaseService
     // =========================================================================
 
     /**
-     * تطبيق آثار فاتورة الشراء:
-     *  1. إضافة قيد دائن في محفظة المورد
-     *  2. زيادة المخزون لكل صنف
-     *  3. تحديث متوسط التكلفة وسعر الشراء للمنتج / المتغير
+     * تطبيق آثار فاتورة الشراء (تُستدعى فقط للفواتير بحالة received):
+     *  1. إضافة قيد دائن (الإجمالي) ومدين (المدفوع) في محفظة المورد
+     *  2. تحديث متوسط التكلفة على مخزون كل المستودعات (قبل زيادة الكمية)
+     *  3. زيادة المخزون بوحدة الأساس وتكلفة وحدة الأساس
      */
     public function apply(Purchase $purchase): void
     {
-        $purchase->loadMissing('items');
+        $purchase->loadMissing('items.unitConversion');
 
         $this->addSupplierWalletEntry($purchase);
 
         foreach ($purchase->items as $item) {
-            $this->increaseInventory($purchase->warehouse_id, $item);
-            $this->updateProductCost($purchase->warehouse_id, $item);
+            $baseQty  = $this->resolvedQuantity($item);
+            $baseCost = $this->baseUnitCost($item);
+
+            $this->applyCostIn($item, $baseQty, $baseCost);
+            $this->increaseInventory($purchase->warehouse_id, $item, $baseQty, $baseCost);
         }
 
         Log::info('PurchaseService@apply: done', [
@@ -43,20 +47,24 @@ class PurchaseService
     }
 
     /**
-     * عكس آثار فاتورة الشراء (عند الحذف أو إعادة التطبيق):
-     *  1. حذف قيد محفظة المورد وإعادة الحساب
-     *  2. تقليل المخزون
-     *  3. إعادة حساب متوسط التكلفة من بقية المشتريات
+     * عكس آثار فاتورة الشراء (تُستدعى فقط إذا كانت آثارها مطبقة، أي الحالة السابقة received):
+     *  1. حذف حركات محفظة المورد لهذه الفاتورة وإعادة الحساب
+     *  2. عكس أثر الفاتورة على متوسط التكلفة (قبل إنقاص الكمية)
+     *  3. تقليل المخزون
      */
     public function reverse(Purchase $purchase): void
     {
-        $purchase->loadMissing('items');
+        $purchase->loadMissing('items.unitConversion');
 
         $this->removeSupplierWalletEntry($purchase);
 
         foreach ($purchase->items as $item) {
-            $this->decreaseInventory($purchase->warehouse_id, $item);
-            $this->recalculateProductCost($item->product_id, $item->variant_id);
+            $baseQty  = $this->resolvedQuantity($item);
+            $baseCost = $this->baseUnitCost($item);
+
+            $this->applyCostOut($item, $baseQty, $baseCost);
+            $this->decreaseInventory($purchase->warehouse_id, $item, $baseQty, $baseCost);
+            $this->refreshLastCost($item);
         }
 
         Log::info('PurchaseService@reverse: done', [
@@ -139,10 +147,8 @@ class PurchaseService
     //  Inventory
     // =========================================================================
 
-    private function increaseInventory(int $warehouseId, PurchaseItem $item): void
+    private function increaseInventory(int $warehouseId, PurchaseItem $item, float $qty, float $unitCost): void
     {
-        $qty = $this->resolvedQuantity($item);
-
         $inv = InventoryItem::firstOrCreate(
             [
                 'warehouse_id' => $warehouseId,
@@ -154,54 +160,41 @@ class PurchaseService
 
         $inv->increment('quantity', $qty);
 
-        InventoryTransaction::create([
-            'warehouse_id' => $warehouseId,
-            'product_id'   => $item->product_id,
-            'variant_id'   => $item->variant_id,
-            'type'         => 'in',
-            'quantity'     => $qty,
-            'unit_cost'    => $item->unit_cost,
-            'notes'        => 'فاتورة شراء #' . $item->purchase_id,
-            'created_by'   => auth()->id(),
-        ]);
-
-        WarehouseTransaction::log([
-            'warehouse_id'       => $warehouseId,
-            'product_id'         => $item->product_id,
-            'variant_id'         => $item->variant_id,
-            'unit_conversion_id' => $item->unit_conversion_id,
-            'type'               => 'in',
-            'quantity'           => $qty,
-            'unit_cost'          => $item->unit_cost,
-            'reference_type'     => Purchase::class,
-            'reference_id'       => $item->purchase_id,
-            'notes'              => 'فاتورة شراء #' . $item->purchase_id,
-        ]);
+        $this->logMovement($warehouseId, $item, 'in', $qty, $unitCost, 'فاتورة شراء #' . $item->purchase_id);
     }
 
-    private function decreaseInventory(int $warehouseId, PurchaseItem $item): void
+    private function decreaseInventory(int $warehouseId, PurchaseItem $item, float $qty, float $unitCost): void
     {
-        $qty = $this->resolvedQuantity($item);
-
-        $inv = InventoryItem::where([
-            'warehouse_id' => $warehouseId,
-            'product_id'   => $item->product_id,
-            'variant_id'   => $item->variant_id,
-        ])->first();
+        $inv = InventoryItem::where('warehouse_id', $warehouseId)
+            ->where('product_id', $item->product_id)
+            ->when(
+                $item->variant_id,
+                fn ($q) => $q->where('variant_id', $item->variant_id),
+                fn ($q) => $q->whereNull('variant_id')
+            )
+            ->first();
 
         if ($inv) {
             $newQty = max(0, (float) $inv->quantity - $qty);
             $inv->update(['quantity' => $newQty]);
         }
 
+        $this->logMovement($warehouseId, $item, 'out', $qty, $unitCost, 'إلغاء فاتورة شراء #' . $item->purchase_id);
+    }
+
+    /**
+     * تسجيل الحركة في inventory_transactions و warehouse_transactions بوحدة الأساس
+     */
+    private function logMovement(int $warehouseId, PurchaseItem $item, string $type, float $qty, float $unitCost, string $notes): void
+    {
         InventoryTransaction::create([
             'warehouse_id' => $warehouseId,
             'product_id'   => $item->product_id,
             'variant_id'   => $item->variant_id,
-            'type'         => 'out',
+            'type'         => $type,
             'quantity'     => $qty,
-            'unit_cost'    => $item->unit_cost,
-            'notes'        => 'إلغاء فاتورة شراء #' . $item->purchase_id,
+            'unit_cost'    => round($unitCost, 4),
+            'notes'        => $notes,
             'created_by'   => auth()->id(),
         ]);
 
@@ -210,146 +203,155 @@ class PurchaseService
             'product_id'         => $item->product_id,
             'variant_id'         => $item->variant_id,
             'unit_conversion_id' => $item->unit_conversion_id,
-            'type'               => 'out',
+            'type'               => $type,
             'quantity'           => $qty,
-            'unit_cost'          => $item->unit_cost,
+            'unit_cost'          => round($unitCost, 4),
             'reference_type'     => Purchase::class,
             'reference_id'       => $item->purchase_id,
-            'notes'              => 'إلغاء فاتورة شراء #' . $item->purchase_id,
+            'notes'              => $notes,
         ]);
     }
 
     /**
-     * حساب الكمية الفعلية بعد تطبيق معامل الوحدة إن وُجد
+     * الكمية بوحدة الأساس = الكمية × معامل التحويل (إن وُجد)
      */
-    private function resolvedQuantity(PurchaseItem $item): float
+    public function resolvedQuantity(PurchaseItem $item): float
     {
         $qty = (float) $item->quantity;
 
         if ($item->unit_conversion_id) {
             $item->loadMissing('unitConversion');
             $factor = (float) ($item->unitConversion?->conversion_rate ?? 1);
-            $qty    = $qty * $factor;
+            $qty    = $qty * ($factor > 0 ? $factor : 1);
         }
 
         return $qty;
     }
 
+    /**
+     * تكلفة وحدة الأساس = صافي السطر (بعد الخصم وبدون الضريبة) ÷ الكمية بوحدة الأساس
+     * بهذا تتطابق قيمة المخزون مع مدين حساب المخزون (subtotal) في القيد.
+     */
+    public function baseUnitCost(PurchaseItem $item): float
+    {
+        $baseQty = $this->resolvedQuantity($item);
+        if ($baseQty <= 0) {
+            return 0.0;
+        }
+
+        $gross = (float) $item->quantity * (float) $item->unit_cost - (float) $item->discount;
+        $rate  = (float) $item->tax_rate;
+
+        $net = Helper::pricingMode() === 'inclusive' && $rate > 0
+            ? $gross * 100 / (100 + $rate)
+            : $gross;
+
+        return max(0.0, $net / $baseQty);
+    }
+
     // =========================================================================
-    //  Product Cost (Average Cost & Cost Price)
+    //  Product Cost (Weighted Average Cost across all warehouses)
     // =========================================================================
 
     /**
-     * تحديث متوسط التكلفة وسعر الشراء عند إضافة مشتريات جديدة.
-     * المعادلة: avg_new = (qty_old * avg_old + qty_new * cost_new) / (qty_old + qty_new)
+     * الكمية الحالية للمنتج / المتغير في كل المستودعات
      */
-    private function updateProductCost(int $warehouseId, PurchaseItem $item): void
+    private function currentStock(int $productId, ?int $variantId): float
     {
-        $newQty  = $this->resolvedQuantity($item);
-        $newCost = (float) $item->unit_cost;
+        return (float) InventoryItem::where('product_id', $productId)
+            ->when(
+                $variantId,
+                fn ($q) => $q->where('variant_id', $variantId),
+                fn ($q) => $q->whereNull('variant_id')
+            )
+            ->sum('quantity');
+    }
 
-        if ($item->variant_id) {
-            $variant = ProductVariant::find($item->variant_id);
-            if (! $variant) {
-                return;
-            }
-
-            // الكمية الحالية قبل الزيادة كانت: الكمية الإجمالية - الكمية المضافة للتو
-            $currentQty = max(0, (float) InventoryItem::where([
-                'product_id'   => $item->product_id,
-                'variant_id'   => $item->variant_id,
-            ])->value('quantity') - $newQty);
-
-            $oldAvg = (float) ($variant->average_cost ?? 0);
-
-            // إذا لم يكن المتوسط محسوباً، استخدم التكلفة الحالية الفعلية
-            if ($oldAvg <= 0) {
-                $oldAvg = (float) ($variant->cost_price ?? $newCost);
-            }
-            $totalQty = $currentQty + $newQty;
-            $newAvg  = $totalQty > 0
-                ? (($currentQty * $oldAvg) + ($newQty * $newCost)) / $totalQty
-                : $newCost;
-
-            $variant->update([
-                'average_cost'  => round($newAvg, 4),
-                'cost_price'    => $newCost,
-                'purchase_price' => $newCost,
-            ]);
-
-        } else {
-            $product = Product::find($item->product_id);
-            if (! $product) {
-                return;
-            }
-
-            $currentQty = max(0, (float) InventoryItem::where([
-                'product_id'   => $item->product_id,
-                'variant_id'   => null,
-            ])->value('quantity') - $newQty);
-
-            $oldAvg   = (float) ($product->average_cost ?? 0);
-            if ($oldAvg <= 0) {
-                $oldAvg = (float) ($product->cost_price ?? $newCost);
-            }
-            $totalQty = $currentQty + $newQty;
-            $newAvg   = $totalQty > 0
-                ? (($currentQty * $oldAvg) + ($newQty * $newCost)) / $totalQty
-                : $newCost;
-
-            $product->update([
-                'average_cost'  => round($newAvg, 4),
-                'cost_price'    => $newCost,
-                'purchase_price' => $newCost,
-            ]);
-        }
+    private function costTarget(PurchaseItem $item): Product|ProductVariant|null
+    {
+        return $item->variant_id
+            ? ProductVariant::find($item->variant_id)
+            : Product::find($item->product_id);
     }
 
     /**
-     * إعادة حساب متوسط التكلفة من الصفر بناءً على جميع بنود المشتريات المتبقية
+     * إضافة: avg_new = (Q×avg + q×c) / (Q + q) — Q مخزون كل المستودعات قبل الإضافة
      */
-    private function recalculateProductCost(int $productId, ?int $variantId): void
+    private function applyCostIn(PurchaseItem $item, float $qty, float $cost): void
     {
-        $items = PurchaseItem::where('product_id', $productId)
-            ->where('variant_id', $variantId)
-            ->get();
-
-        if ($items->isEmpty()) {
-            // لا توجد مشتريات — أعد التكلفة إلى صفر
-            if ($variantId) {
-                ProductVariant::where('id', $variantId)->update([
-                    'average_cost'   => 0,
-                    'cost_price'     => 0,
-                    'purchase_price' => 0,
-                ]);
-            } else {
-                Product::where('id', $productId)->update([
-                    'average_cost'   => 0,
-                    'cost_price'     => 0,
-                    'purchase_price' => 0,
-                ]);
-            }
+        $target = $this->costTarget($item);
+        if (! $target || $qty <= 0) {
             return;
         }
 
-        // متوسط مرجح من جميع بنود الشراء
-        $totalQty  = $items->sum(fn($i) => (float) $i->quantity);
-        $totalCost = $items->sum(fn($i) => (float) $i->quantity * (float) $i->unit_cost);
-        $avgCost   = $totalQty > 0 ? round($totalCost / $totalQty, 4) : 0;
-        $lastCost  = (float) $items->last()->unit_cost;
+        $currentQty = max(0.0, $this->currentStock($item->product_id, $item->variant_id));
+        $oldAvg     = (float) ($target->average_cost ?? 0);
 
-        if ($variantId) {
-            ProductVariant::where('id', $variantId)->update([
-                'average_cost'   => $avgCost,
-                'cost_price'     => $lastCost,
-                'purchase_price' => $lastCost,
-            ]);
-        } else {
-            Product::where('id', $productId)->update([
-                'average_cost'   => $avgCost,
-                'cost_price'     => $lastCost,
-                'purchase_price' => $lastCost,
-            ]);
+        // متوسط غير محسوب (مثل رصيد افتتاحي بلا تكلفة): يُقيَّم الرصيد الحالي بالتكلفة الجديدة
+        if ($oldAvg <= 0) {
+            $oldAvg = $cost;
+        }
+
+        $totalQty = $currentQty + $qty;
+        $newAvg   = $totalQty > 0 ? (($currentQty * $oldAvg) + ($qty * $cost)) / $totalQty : $cost;
+
+        $target->update([
+            'average_cost'   => round($newAvg, 4),
+            'cost_price'     => round($cost, 4),
+            'purchase_price' => round($cost, 4),
+        ]);
+    }
+
+    /**
+     * عكس: avg_new = (Q×avg − q×c) / (Q − q) — Q مخزون كل المستودعات قبل الإنقاص
+     * إذا نفد المخزون أو كانت النتيجة غير منطقية يبقى المتوسط كما هو.
+     */
+    private function applyCostOut(PurchaseItem $item, float $qty, float $cost): void
+    {
+        $target = $this->costTarget($item);
+        if (! $target || $qty <= 0) {
+            return;
+        }
+
+        $currentQty = max(0.0, $this->currentStock($item->product_id, $item->variant_id));
+        $avg        = (float) ($target->average_cost ?? 0);
+        $remaining  = $currentQty - $qty;
+
+        if ($remaining <= 0) {
+            return;
+        }
+
+        $newAvg = (($currentQty * $avg) - ($qty * $cost)) / $remaining;
+
+        if ($newAvg > 0) {
+            $target->update(['average_cost' => round($newAvg, 4)]);
         }
     }
+
+    /**
+     * سعر آخر شراء = تكلفة وحدة الأساس لآخر بند من فاتورة مستلمة أخرى (غير الفاتورة المعكوسة)
+     */
+    private function refreshLastCost(PurchaseItem $item): void
+    {
+        $last = PurchaseItem::with('unitConversion')
+            ->where('product_id', $item->product_id)
+            ->when(
+                $item->variant_id,
+                fn ($q) => $q->where('variant_id', $item->variant_id),
+                fn ($q) => $q->whereNull('variant_id')
+            )
+            ->where('purchase_id', '!=', $item->purchase_id)
+            ->whereHas('purchase', fn ($q) => $q->where('status', 'received'))
+            ->latest('id')
+            ->first();
+
+        $target = $this->costTarget($item);
+        if (! $last || ! $target) {
+            return;
+        }
+
+        $cost = round($this->baseUnitCost($last), 4);
+        $target->update(['cost_price' => $cost, 'purchase_price' => $cost]);
+    }
 }
+

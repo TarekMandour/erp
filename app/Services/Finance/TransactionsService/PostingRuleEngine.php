@@ -6,6 +6,7 @@ use App\Models\Finance\AccountTree;
 use App\Models\Finance\JournalEntry;
 use App\Models\Finance\PostingRule;
 use App\Models\Finance\Voucher;
+use App\Models\Finance\Purchase;
 use App\Models\Finance\BankAccount;
 use App\Models\Finance\Treasury;
 use Illuminate\Database\Eloquent\Model;
@@ -152,6 +153,24 @@ class PostingRuleEngine
 
             if ($this->isFinancialAccount($selectedAccountId)) {
                 return $selectedAccountId;
+            }
+        }
+
+        /*
+         * فاتورة شراء بنوع دفع بنكي/محفظة مع اختيار حساب بنكي:
+         * بند "المدفوع" الدائن يُرحَّل على حساب الشجرة المرتبط بالحساب البنكي
+         * حتى يظهر في سجل حركات البنك.
+         */
+        if (
+            $sourceModel instanceof Purchase
+            && $sourceModel->bank_account_id
+            && $rule->credit_account_id
+            && $rule->amount_field === 'paid'
+        ) {
+            $bankTreeId = BankAccount::whereKey($sourceModel->bank_account_id)->value('account_tree_id');
+
+            if ($bankTreeId) {
+                return (int) $bankTreeId;
             }
         }
 

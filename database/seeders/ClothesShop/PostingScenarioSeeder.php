@@ -81,7 +81,7 @@ class PostingScenarioSeeder extends Seeder
                 'operation_type' => 'purchase_return',
                 'priority' => 10,
                 'description' => 'استرجاع منتج لمورد مع استرداد نقدي',
-                'is_active' => 1,
+                'is_active' => 0, // معطّل حتى تُبنى شاشة مرتجع الشراء,
             ],
             [
                 'code' => 'PURCHASE_RETURN_CREDIT',
@@ -89,7 +89,7 @@ class PostingScenarioSeeder extends Seeder
                 'operation_type' => 'purchase_return',
                 'priority' => 10,
                 'description' => 'استرجاع منتج لمورد مع تخفيض رصيده',
-                'is_active' => 1,
+                'is_active' => 0, // معطّل حتى تُبنى شاشة مرتجع الشراء,
             ],
             [
                 'code' => 'PURCHASE_RETURN_INSTALLMENTS',
@@ -97,7 +97,7 @@ class PostingScenarioSeeder extends Seeder
                 'operation_type' => 'purchase_return',
                 'priority' => 10,
                 'description' => 'استرجاع منتج لمورد مع تخفيض رصيد الأقساط',
-                'is_active' => 1,
+                'is_active' => 0, // معطّل حتى تُبنى شاشة مرتجع الشراء,
             ],
             [
                 'code' => 'PURCHASE_RETURN_WALLET',
@@ -105,7 +105,7 @@ class PostingScenarioSeeder extends Seeder
                 'operation_type' => 'purchase_return',
                 'priority' => 10,
                 'description' => 'استرجاع مبلغ المرتجع إلى المحفظة الإلكترونية',
-                'is_active' => 1,
+                'is_active' => 0, // معطّل حتى تُبنى شاشة مرتجع الشراء,
             ],
             [
                 'code' => 'PURCHASE_RETURN_BANK_ONLINE',
@@ -113,7 +113,7 @@ class PostingScenarioSeeder extends Seeder
                 'operation_type' => 'purchase_return',
                 'priority' => 10,
                 'description' => 'استرجاع مبلغ المرتجع عبر البنك أونلاين',
-                'is_active' => 1,
+                'is_active' => 0, // معطّل حتى تُبنى شاشة مرتجع الشراء,
             ],
             [
                 'code' => 'PURCHASE_RETURN_BANK_DIRECT',
@@ -121,7 +121,7 @@ class PostingScenarioSeeder extends Seeder
                 'operation_type' => 'purchase_return',
                 'priority' => 10,
                 'description' => 'استرجاع مبلغ المرتجع عبر البنك مباشرة',
-                'is_active' => 1,
+                'is_active' => 0, // معطّل حتى تُبنى شاشة مرتجع الشراء,
             ],
             [
                 'code' => 'PURCHASE_RETURN_CHECK',
@@ -129,7 +129,7 @@ class PostingScenarioSeeder extends Seeder
                 'operation_type' => 'purchase_return',
                 'priority' => 10,
                 'description' => 'تسوية مرتجع مشتريات مرتبط بشيك',
-                'is_active' => 1,
+                'is_active' => 0, // معطّل حتى تُبنى شاشة مرتجع الشراء,
             ],
 
             // ============================================================

@@ -46,6 +46,7 @@ class AccountTreeSeeder extends Seeder
         AccountTree::firstOrCreate(['code' => '2101'], ['name' => 'الموردين (ذمم دائنة)', 'parent_id' => $currentLiab->id, 'type' => 'liability', 'level' => 2, 'is_active' => true]);
         AccountTree::firstOrCreate(['code' => '2102'], ['name' => 'ضريبة القيمة المضافة', 'parent_id' => $currentLiab->id, 'type' => 'liability', 'level' => 2, 'is_active' => true]);
         AccountTree::firstOrCreate(['code' => '2103'], ['name' => 'مصروفات مستحقة', 'parent_id' => $currentLiab->id, 'type' => 'liability', 'level' => 2, 'is_active' => true]);
+        AccountTree::firstOrCreate(['code' => '2105'], ['name' => 'أوراق دفع (شيكات مستحقة الدفع)', 'parent_id' => $currentLiab->id, 'type' => 'liability', 'account_type' => 'credit', 'level' => 2, 'is_active' => true]);
 
         // ─── Equity (Level 1) ───
         AccountTree::firstOrCreate(['code' => '3001'], ['name' => 'رأس المال', 'parent_id' => $equity->id, 'type' => 'equity', 'level' => 1, 'is_active' => true]);

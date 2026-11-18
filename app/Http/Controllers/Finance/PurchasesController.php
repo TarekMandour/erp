@@ -14,7 +14,6 @@ use App\Models\Finance\Warehouse;
 use App\Models\Finance\Product;
 use App\Models\Finance\ProductVariant;
 use App\Models\Finance\UnitConversion;
-use App\Events\Finance\Purchases\PurchaseEvent;
 use App\Http\Requests\Finance\PurchaseRequest;
 use App\Services\Finance\PurchaseService;
 use App\Services\Finance\TransactionsService;
@@ -105,26 +104,14 @@ class PurchasesController extends Controller
     // -------------------------------------------------------
     public function store(PurchaseRequest $request)
     {
-        $purchase = null;
-
-        // تعطيل الـ Observer داخل المعاملة لمنع إنشاء قيود متعددة
-        $dispatcher = Purchase::getEventDispatcher();
-        Purchase::unsetEventDispatcher();
-
         try {
-            DB::transaction(function () use ($request, &$purchase) {
-                $purchase = Purchase::create($this->mapHeader($request));
-                $this->syncItems($purchase, $request->items);
-                $this->recalcTotals($purchase);
-            });
-        } finally {
-            Purchase::setEventDispatcher($dispatcher);
+            // الحفظ + المخزون + المحفظة + القيد في معاملة واحدة (all-or-nothing)
+            $this->persistPurchase($this->mapHeader($request), $request->items);
+        } catch (\Throwable $e) {
+            report($e);
+            return back()->withInput()
+                ->with('error', 'تعذّر حفظ الفاتورة ولم يُطبَّق أي أثر: ' . $e->getMessage());
         }
-
-        // إطلاق حدث واحد فقط بعد اكتمال البيانات النهائية
-        PurchaseEvent::dispatch($purchase->fresh(), 'create');
-
-        $this->purchaseService->apply($purchase->fresh(['items.unitConversion']));
 
         return redirect()->route($this->route . '.index')
             ->with('success', 'تم إضافة فاتورة الشراء بنجاح.');
@@ -165,38 +152,30 @@ class PurchasesController extends Controller
     // -------------------------------------------------------
     public function update(PurchaseRequest $request)
     {
-        $purchase    = null;
         $isCancelled = $request->status === 'cancelled';
 
-        $dispatcher = Purchase::getEventDispatcher();
-        Purchase::unsetEventDispatcher();
-
         try {
-            DB::transaction(function () use ($request, &$purchase, $isCancelled) {
-                $purchase = Purchase::with('items.unitConversion')->findOrFail($request->id);
+            DB::transaction(function () use ($request, $isCancelled) {
+                $purchase = Purchase::with('items.unitConversion')->lockForUpdate()->findOrFail($request->id);
 
-                // عكس آثار المحفظة + المخزون + التكلفة دائماً
-                $this->purchaseService->reverse($purchase);
+                // عكس الآثار فقط إذا كانت مطبقة (الحالة السابقة received)
+                $this->reverseEffects($purchase);
 
-                $purchase->update($this->mapHeader($request));
+                $purchase->update($this->mapHeader($request, $purchase));
 
                 if (! $isCancelled) {
                     $purchase->items()->delete();
                     $this->syncItems($purchase, $request->items);
                     $this->recalcTotals($purchase);
                 }
-            });
-        } finally {
-            Purchase::setEventDispatcher($dispatcher);
-        }
 
-        if (! $isCancelled) {
-            // إعادة إنشاء القيد مباشرة (synchronous) لتجنب تكرار القيود
-            $this->transactionsService->regenerate($purchase->fresh());
-            $this->purchaseService->apply($purchase->fresh(['items.unitConversion']));
-        } else {
-            // إلغاء: عكس القيد فقط
-            $this->transactionsService->reverse($purchase->fresh());
+                // تطبيق الآثار فقط إذا كانت الحالة الجديدة received
+                $this->applyEffects($purchase);
+            });
+        } catch (\Throwable $e) {
+            report($e);
+            return back()->withInput()
+                ->with('error', 'تعذّر تحديث الفاتورة ولم يتغير أي شيء: ' . $e->getMessage());
         }
 
         return redirect()->route($this->route . '.index')
@@ -208,15 +187,20 @@ class PurchasesController extends Controller
     // -------------------------------------------------------
     public function destroy(Request $request)
     {
-        $purchase = Purchase::with('items.unitConversion')->findOrFail($request->id);
+        try {
+            DB::transaction(function () use ($request) {
+                $purchase = Purchase::with('items.unitConversion')->lockForUpdate()->findOrFail($request->id);
 
-        // عكس المحفظة + المخزون + التكلفة
-        $this->purchaseService->reverse($purchase);
+                // عكس المحفظة + المخزون + التكلفة + القيد فقط للفواتير المستلمة
+                $this->reverseEffects($purchase);
 
-        // عكس القيد المحاسبي
-        $this->transactionsService->reverse($purchase);
+                $purchase->delete();
+            });
+        } catch (\Throwable $e) {
+            report($e);
+            return back()->with('error', 'تعذّر حذف الفاتورة: ' . $e->getMessage());
+        }
 
-        $purchase->delete();
         return back()->with('success', 'تم حذف الفاتورة بنجاح.');
     }
 
@@ -238,7 +222,17 @@ class PurchasesController extends Controller
             'file.max'      => 'الحد الأقصى لحجم الملف 5 ميجابايت.',
         ]);
 
-        $rows = (new FastExcel)->import($request->file('file'));
+        // FastExcel يختار القارئ حسب امتداد المسار؛ الملف المرفوع مؤقت بامتداد .tmp
+        // لذا ننقله بامتداده الحقيقي (وإلا يفشل CSV دائماً لأنه يُقرأ كـ XLSX)
+        $upload = $request->file('file');
+        $ext    = strtolower($upload->getClientOriginalExtension() ?: $upload->extension());
+        $moved  = $upload->move(sys_get_temp_dir(), uniqid('purchase_import_') . '.' . $ext);
+
+        try {
+            $rows = (new FastExcel)->import($moved->getPathname());
+        } finally {
+            @unlink($moved->getPathname());
+        }
 
         if ($rows->isEmpty()) {
             return back()->with('error', 'الملف فارغ أو لا يحتوي على بيانات.');
@@ -247,7 +241,8 @@ class PurchasesController extends Controller
         $errors  = [];
         $created = 0;
 
-        DB::transaction(function () use ($rows, &$errors, &$created) {
+        // كل سطر يمر بنفس مسار store (مخزون + محفظة + قيد) في معاملة مستقلة
+        {
             foreach ($rows as $index => $row) {
                 $rowNum = $index + 2; // row number in Excel (1 = header)
 
@@ -264,6 +259,7 @@ class PurchasesController extends Controller
                 $unitCost      = $row['سعر الوحدة']     ?? $row['unit_cost']  ?? null;
                 $discountAmt   = $row['الخصم']          ?? $row['discount']   ?? 0;
                 $taxRate       = $row['نسبة الضريبة']   ?? $row['tax_rate']   ?? 0;
+                $paidRaw       = $row['المدفوع']        ?? $row['paid']       ?? '';
 
                 // Validate required fields
                 if (!$supplierName || !$warehouseName || !$date || !$productSku || !$quantity || !$unitCost) {
@@ -272,12 +268,21 @@ class PurchasesController extends Controller
                 }
 
                 $supplier  = Supplier::where('company_name', $supplierName)->orWhere('name', $supplierName)->first();
-                $warehouse = Warehouse::where('name', $warehouseName)->first();
-                $product   = Product::where('sku', $productSku)->orWhere('name', $productSku)->first();
+                $warehouse = Warehouse::where('name', $warehouseName)->where('is_active', true)->first();
+
+                // رمز المتغيّر أولاً، ثم رمز / اسم المنتج
+                $variant = ProductVariant::where('sku', $productSku)->first();
+                $product = $variant
+                    ? Product::find($variant->product_id)
+                    : Product::where('sku', $productSku)->orWhere('name', $productSku)->first();
 
                 if (!$supplier)  { $errors[] = "السطر {$rowNum}: المورد «{$supplierName}» غير موجود.";    continue; }
-                if (!$warehouse) { $errors[] = "السطر {$rowNum}: المستودع «{$warehouseName}» غير موجود."; continue; }
+                if (!$warehouse) { $errors[] = "السطر {$rowNum}: المستودع «{$warehouseName}» غير موجود أو غير مفعّل."; continue; }
                 if (!$product)   { $errors[] = "السطر {$rowNum}: المنتج «{$productSku}» غير موجود.";      continue; }
+                if (!$variant && $product->variants()->exists()) {
+                    $errors[] = "السطر {$rowNum}: المنتج «{$productSku}» له متغيّرات؛ استخدم رمز المتغيّر (SKU).";
+                    continue;
+                }
 
                 $paymentMap = ['نقدي' => 'cash', 'آجل' => 'credit', 'أقساط' => 'installments', 'محفظة الكترونيه' => 'wallet', 'تحويل بنكي اونلاين' => 'bank_online', 'تحويل بنكي مباشر' => 'bank_direct', 'شيك' => 'check'];
                 $paymentType = $paymentMap[$paymentType] ?? (in_array($paymentType, ['cash', 'credit', 'installments', 'wallet', 'bank_online', 'bank_direct', 'check']) ? $paymentType : 'cash');
@@ -286,37 +291,43 @@ class PurchasesController extends Controller
                 $cost     = (float) $unitCost;
                 $disc     = (float) $discountAmt;
                 $tax      = (float) $taxRate;
-                $rowTotal = round(($qty * $cost - $disc) * (1 + $tax / 100), 2);
+                $rowTotal = $this->lineTotal($qty, $cost, $disc, $tax);
 
-                $purchase = Purchase::create([
-                    'purchase_number' => Purchase::generateNumber(),
-                    'supplier_id'     => $supplier->id,
-                    'warehouse_id'    => $warehouse->id,
-                    'date'            => \Carbon\Carbon::parse($date)->format('Y-m-d'),
-                    'payment_type'    => $paymentType,
-                    'status'          => 'pending',
-                    'notes'           => $notes,
-                    'subtotal'        => round($qty * $cost - $disc, 2),
-                    'discount'        => $disc,
-                    'tax'             => round(($qty * $cost - $disc) * $tax / 100, 2),
-                    'total'           => $rowTotal,
-                    'paid'            => 0,
-                ]);
+                // المدفوع: من العمود إن وُجد، وإلا الإجمالي للنقدي وصفر لغيره
+                $paid = $paidRaw === '' || $paidRaw === null
+                    ? ($paymentType === 'cash' ? $rowTotal : 0)
+                    : (float) $paidRaw;
 
-                PurchaseItem::create([
-                    'purchase_id' => $purchase->id,
-                    'product_id'  => $product->id,
-                    'variant_id'  => null,
-                    'quantity'    => $qty,
-                    'unit_cost'   => $cost,
-                    'discount'    => $disc,
-                    'tax_rate'    => $tax,
-                    'total'       => $rowTotal,
-                ]);
+                if ($paid < 0 || $paid > $rowTotal + 0.005) {
+                    $errors[] = "السطر {$rowNum}: المدفوع ({$paid}) يجب أن يكون بين 0 والإجمالي ({$rowTotal}).";
+                    continue;
+                }
 
-                $created++;
+                try {
+                    $this->persistPurchase([
+                        'purchase_number' => Purchase::generateNumber(),
+                        'supplier_id'     => $supplier->id,
+                        'warehouse_id'    => $warehouse->id,
+                        'date'            => \Carbon\Carbon::parse($date)->format('Y-m-d'),
+                        'payment_type'    => $paymentType,
+                        'status'          => 'received',
+                        'notes'           => $notes ?: null,
+                        'paid'            => $paid,
+                    ], [[
+                        'product_id' => $product->id,
+                        'variant_id' => $variant?->id,
+                        'quantity'   => $qty,
+                        'unit_cost'  => $cost,
+                        'discount'   => $disc,
+                        'tax_rate'   => $tax,
+                    ]]);
+                    $created++;
+                } catch (\Throwable $e) {
+                    report($e);
+                    $errors[] = "السطر {$rowNum}: تعذّر الحفظ ({$e->getMessage()}).";
+                }
             }
-        });
+        }
 
         $msg = "تم استيراد {$created} فاتورة بنجاح.";
         if (!empty($errors)) {
@@ -463,10 +474,66 @@ class PurchasesController extends Controller
     // -------------------------------------------------------
     // Private helpers
     // -------------------------------------------------------
-    private function mapHeader(PurchaseRequest $request): array
+    /**
+     * إنشاء فاتورة + بنودها + إجمالياتها + آثارها في معاملة واحدة
+     */
+    private function persistPurchase(array $header, array $items): Purchase
     {
+        return DB::transaction(function () use ($header, $items) {
+            $purchase = Purchase::create($header);
+            $this->syncItems($purchase, $items);
+            $this->recalcTotals($purchase);
+            $this->applyEffects($purchase);
+
+            return $purchase;
+        });
+    }
+
+    /**
+     * تطبيق الآثار (محفظة + مخزون + تكلفة + قيد) فقط للفواتير المستلمة
+     * يجب استدعاؤها داخل معاملة DB: فشل الترحيل يلغي كل شيء.
+     */
+    private function applyEffects(Purchase $purchase): void
+    {
+        $purchase = $purchase->fresh(['items.unitConversion']);
+
+        if ($purchase->status !== 'received') {
+            return;
+        }
+
+        $this->purchaseService->apply($purchase);
+        $this->transactionsService->process($purchase);
+    }
+
+    /**
+     * عكس الآثار فقط إذا كانت مطبقة (الحالة الحالية المحفوظة received)
+     */
+    private function reverseEffects(Purchase $purchase): void
+    {
+        if ($purchase->status !== 'received') {
+            return;
+        }
+
+        $this->purchaseService->reverse($purchase);
+        $this->transactionsService->reverse($purchase);
+    }
+
+    private function lineTotal(float $qty, float $cost, float $disc, float $taxRate): float
+    {
+        return \App\Helpers\Helper::pricingMode() === 'inclusive'
+            ? round($qty * $cost - $disc, 2)
+            : round(($qty * $cost - $disc) * (1 + $taxRate / 100), 2);
+    }
+
+    private function mapHeader(PurchaseRequest $request, ?Purchase $existing = null): array
+    {
+        $bankTypes = ['wallet', 'bank_online', 'bank_direct'];
+
         return [
-            'purchase_number' => $request->purchase_number ?: Purchase::generateNumber(),
+            'purchase_number' => $request->purchase_number ?: ($existing?->purchase_number ?? Purchase::generateNumber()),
+            'bank_account_id' => in_array($request->payment_type, $bankTypes, true) && $request->filled('bank_account_id')
+                ? (int) $request->bank_account_id
+                : null,
             'supplier_id'     => $request->supplier_id,
             'warehouse_id'    => $request->warehouse_id,
             'date'            => $request->date,
@@ -487,20 +554,15 @@ class PurchasesController extends Controller
             $disc     = (float) ($item['discount'] ?? 0);
             $taxRate  = (float) ($item['tax_rate'] ?? 0);
 
-            if ($pricingMode === 'inclusive') {
-                // السعر شامل الضريبة: الإجمالي = qty * cost - disc
-                $rowTotal = round($qty * $cost - $disc, 2);
-            } else {
-                // السعر غير شامل الضريبة
-                $rowTotal = round(($qty * $cost - $disc) * (1 + $taxRate / 100), 2);
-            }
+            // inclusive: الإجمالي = qty * cost - disc ، exclusive: + الضريبة
+            $rowTotal = $this->lineTotal($qty, $cost, $disc, $taxRate);
 
             $unitConversionId = !empty($item['unit_conversion_id']) ? (int)$item['unit_conversion_id'] : null;
 
             PurchaseItem::create([
                 'purchase_id'        => $purchase->id,
                 'product_id'         => $item['product_id'],
-                'variant_id'         => $item['variant_id'] ?: null,
+                'variant_id'         => ($item['variant_id'] ?? null) ?: null,
                 'unit_conversion_id' => $unitConversionId,
                 'quantity'           => $qty,
                 'unit_cost'          => $cost,
