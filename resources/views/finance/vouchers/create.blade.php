@@ -26,12 +26,14 @@ $(function () {
         $('#section-customer').hide().find('select').prop('disabled', true);
         $('#section-supplier').hide().find('select').prop('disabled', true);
         $('#section-other').hide().find('input').prop('disabled', true);
+        $('#section-other-counter').hide().find('select').prop('disabled', true);
         if (type === 'customer') {
             $('#section-customer').show().find('select').prop('disabled', false);
         } else if (type === 'supplier') {
             $('#section-supplier').show().find('select').prop('disabled', false);
         } else if (type === 'other') {
             $('#section-other').show().find('input').prop('disabled', false);
+            $('#section-other-counter').show().find('select').prop('disabled', false);
         }
     }
     $('#party_type').on('change', togglePartySection);

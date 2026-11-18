@@ -47,9 +47,9 @@
                     @error('credit')<div class="text-danger mt-1">{{$message}}</div>@enderror
                 </div>
                 <div class="col-md-4 fv-row fv-plugins-icon-container">
-                    <label class="form-label required">الرصيد</label>
+                    <label class="form-label">الرصيد (يُحسب تلقائياً)</label>
                     <input type="number" class="form-control form-control-solid" name="balance"
-                        value="{{old('balance', $data->balance ?? 0)}}" step="0.01" placeholder="0.00" />
+                        value="{{old('balance', $data->balance ?? 0)}}" step="0.01" placeholder="0.00" readonly tabindex="-1" />
                     @error('balance')<div class="text-danger mt-1">{{$message}}</div>@enderror
                 </div>
             </div>

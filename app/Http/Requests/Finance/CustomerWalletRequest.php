@@ -19,7 +19,7 @@ class CustomerWalletRequest extends FormRequest
             'description' => 'nullable|string',
             'debit'       => 'required|numeric|min:0',
             'credit'      => 'required|numeric|min:0',
-            'balance'     => 'required|numeric',
+            'balance'     => 'nullable|numeric', // يُتجاهل: الرصيد يُحسب في الخادم من الحركات
         ];
     }
 }

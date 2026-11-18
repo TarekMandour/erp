@@ -1,5 +1,11 @@
 <!--begin::Main column-->
 <div class="d-flex flex-column flex-row-fluid gap-7 gap-lg-10">
+    @if(session('error'))
+    <div class="alert alert-danger mb-0">{{ session('error') }}</div>
+    @endif
+    @if($errors->any())
+    <div class="alert alert-danger mb-0"><ul class="mb-0">@foreach($errors->all() as $e)<li>{{ $e }}</li>@endforeach</ul></div>
+    @endif
     <div class="card card-flush py-4">
         <div class="card-header">
             <div class="card-title"><h2>بيانات السند</h2></div>
@@ -81,6 +87,21 @@
                         value="{{old('party_name', ($data->party_type ?? '') === 'other' ? ($data->party_name ?? '') : '')}}"
                         placeholder="اكتب اسم الطرف" disabled />
                     @error('party_name')<div class="text-danger mt-1">{{$message}}</div>@enderror
+                </div>
+
+                {{-- Other: counter account (QA 2.5) --}}
+                <div class="col-md-6 fv-row" id="section-other-counter" style="display:none;">
+                    <label class="form-label">الحساب المقابل</label>
+                    <select class="form-select form-select-solid" name="counter_account_id" disabled>
+                        <option value="">-- الافتراضي: إيرادات أخرى (قبض) / مصروفات متنوعة (صرف) --</option>
+                        @foreach($counterAccounts as $account)
+                            <option value="{{ $account->id }}"
+                                {{ (string) old('counter_account_id', $data->counter_account_id ?? '') === (string) $account->id ? 'selected' : '' }}>
+                                {{ $account->code }} — {{ $account->name }}
+                            </option>
+                        @endforeach
+                    </select>
+                    @error('counter_account_id')<div class="text-danger mt-1">{{ $message }}</div>@enderror
                 </div>
             </div>
 

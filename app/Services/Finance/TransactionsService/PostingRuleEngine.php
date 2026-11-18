@@ -157,6 +157,19 @@ class PostingRuleEngine
         }
 
         /*
+         * سند لطرف «أخرى» مع حساب مقابل مختار (QA 2.5):
+         * القاعدة غير المالية (إيرادات أخرى 4002 / مصروفات متنوعة 5007) تُرحَّل على الحساب المختار.
+         */
+        if (
+            $sourceModel instanceof Voucher
+            && $sourceModel->party_type === 'other'
+            && $sourceModel->counter_account_id
+            && ! $this->isVoucherFinancialRule($rule, $sourceModel)
+        ) {
+            return (int) $sourceModel->counter_account_id;
+        }
+
+        /*
          * فاتورة شراء بنوع دفع بنكي/محفظة مع اختيار حساب بنكي:
          * بند "المدفوع" الدائن يُرحَّل على حساب الشجرة المرتبط بالحساب البنكي
          * حتى يظهر في سجل حركات البنك.

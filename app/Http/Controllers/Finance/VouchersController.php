@@ -16,12 +16,20 @@ use App\Models\Finance\AccountTree;
 use App\Models\Finance\Treasury;
 use App\Models\Finance\BankAccount;
 use App\Http\Requests\Finance\VoucherRequest;
+use App\Services\Finance\TransactionsService;
+use App\Services\Finance\WalletBalanceService;
+use Illuminate\Support\Facades\DB;
 
 class VouchersController extends Controller
 {
     protected $viewPath  = 'finance.vouchers';
     private $route       = 'finance.vouchers';
     private $objectModel = Voucher::class;
+
+    public function __construct(
+        private TransactionsService $transactionsService,
+        private WalletBalanceService $walletBalance,
+    ) {}
 
     public function index(Request $request)
     {
@@ -99,12 +107,14 @@ class VouchersController extends Controller
         $customers = Customer::where('account_status', 'active')->orderBy('name')->get();
         $suppliers = Supplier::where('account_status', 'active')->orderBy('name')->get();
         $financialAccounts = $this->getFinancialAccounts();
+        $counterAccounts   = $this->getCounterAccounts();
 
         return view($this->viewPath . '.create', compact(
             'data',
             'customers',
             'suppliers',
-            'financialAccounts'
+            'financialAccounts',
+            'counterAccounts'
         ));
     }
 
@@ -113,8 +123,17 @@ class VouchersController extends Controller
         $validated = $request->validated();
         $validated['created_by'] = Auth::guard('admin')->id();
 
-        $voucher = $this->objectModel::create($validated);
-        $this->createWalletEntry($voucher);
+        try {
+            // السند + حركة المحفظة + القيد في معاملة واحدة (QA 2.1 / 2.4): لا سند بلا أثر
+            DB::transaction(function () use ($validated) {
+                $voucher = $this->objectModel::create($validated);
+                $this->createWalletEntry($voucher);
+                $this->postJournalEntry($voucher);
+            });
+        } catch (\Throwable $e) {
+            report($e);
+            return back()->withInput()->with('error', 'تعذّر حفظ السند ولم يُطبَّق أي أثر: ' . $e->getMessage());
+        }
 
         return redirect()->route($this->route . '.index')->with('success', 'تم إضافة السند بنجاح');
     }
@@ -125,23 +144,37 @@ class VouchersController extends Controller
         $customers = Customer::where('account_status', 'active')->orderBy('name')->get();
         $suppliers = Supplier::where('account_status', 'active')->orderBy('name')->get();
         $financialAccounts = $this->getFinancialAccounts();
+        $counterAccounts   = $this->getCounterAccounts();
 
         return view($this->viewPath . '.edit', compact(
             'data',
             'customers',
             'suppliers',
-            'financialAccounts'
+            'financialAccounts',
+            'counterAccounts'
         ));
     }
 
     public function update(VoucherRequest $request)
     {
-        $voucher = $this->objectModel::findOrFail($request->id);
+        try {
+            // مسار تنفيذ واحد متزامن (QA 2.4): عكس القيد والمحفظة القديمين ثم إنشاء الجديدين
+            DB::transaction(function () use ($request) {
+                $voucher = $this->objectModel::lockForUpdate()->findOrFail($request->id);
 
-        $this->deleteWalletEntry($voucher);
-        $voucher->update($request->validated());
-        $voucher->refresh();
-        $this->createWalletEntry($voucher);
+                $this->deleteWalletEntry($voucher);
+                $this->transactionsService->reverse($voucher);
+
+                $voucher->update($request->validated());
+                $voucher->refresh();
+
+                $this->createWalletEntry($voucher);
+                $this->postJournalEntry($voucher);
+            });
+        } catch (\Throwable $e) {
+            report($e);
+            return back()->withInput()->with('error', 'تعذّر تحديث السند ولم يتغير أي شيء: ' . $e->getMessage());
+        }
 
         return redirect()->route($this->route . '.index')->with('success', 'تم تحديث السند بنجاح');
     }
@@ -156,13 +189,22 @@ class VouchersController extends Controller
 
     public function destroy(Request $request)
     {
-        foreach ((array) $request->ids as $id) {
-            $voucher = $this->objectModel::find($id);
-            if ($voucher) {
-                $this->deleteWalletEntry($voucher);
-                $voucher->delete();
-            }
+        try {
+            DB::transaction(function () use ($request) {
+                foreach ((array) ($request->ids ?? $request->id) as $id) {
+                    $voucher = $this->objectModel::lockForUpdate()->find($id);
+                    if ($voucher) {
+                        $this->deleteWalletEntry($voucher);
+                        $this->transactionsService->reverse($voucher);
+                        $voucher->delete();
+                    }
+                }
+            });
+        } catch (\Throwable $e) {
+            report($e);
+            return response()->json(['success' => false, 'message' => 'تعذّر الحذف: ' . $e->getMessage()], 422);
         }
+
         return response()->json(['success' => true]);
     }
 
@@ -212,43 +254,70 @@ class VouchersController extends Controller
             ->get();
     }
 
+    /**
+     * الحسابات المقابلة المتاحة للطرف «أخرى»: حسابات فرعية مفعّلة ليست خزنة أو بنكاً (QA 2.5)
+     */
+    private function getCounterAccounts()
+    {
+        $financialIds = Treasury::whereNotNull('account_tree_id')->pluck('account_tree_id')
+            ->merge(BankAccount::whereNotNull('account_tree_id')->pluck('account_tree_id'));
+
+        return AccountTree::where('is_active', true)
+            ->whereNotIn('id', $financialIds)
+            ->whereNotIn('id', AccountTree::whereNotNull('parent_id')->select('parent_id'))
+            ->orderBy('code')
+            ->get(['id', 'code', 'name']);
+    }
+
     // ──────────────────────────────────────────────────────────────────
     // Wallet helpers
     // ──────────────────────────────────────────────────────────────────
 
+    /**
+     * ترحيل القيد متزامناً؛ لا يُقبل قيد احتياطي (مسودة) لأن معناه عدم وجود سيناريو صالح.
+     */
+    private function postJournalEntry(Voucher $voucher): void
+    {
+        $entry = $this->transactionsService->process($voucher);
+
+        if (! $entry || $entry->status !== 'posted') {
+            throw new \RuntimeException('لا يوجد سيناريو ترحيل صالح لهذا السند (' . $voucher->getScenarioCode() . ').');
+        }
+    }
+
     private function createWalletEntry(Voucher $voucher): void
     {
         if ($voucher->party_type === 'customer' && $voucher->party_id) {
-            // receipt (قبض) = customer paid us  → debit
-            // payment (صرف) = we paid customer → credit
+            // محفظة العميل (مدين − دائن) تقابل 1104:
+            // قبض من العميل → دائن ، صرف للعميل → مدين
             $isReceipt = $voucher->type === 'receipt';
             CustomerWallet::create([
                 'customer_id' => $voucher->party_id,
                 'voucher_id'  => $voucher->id,
                 'date'        => $voucher->date,
                 'description' => $voucher->description ?? $voucher->type_name,
-                'debit'      => $isReceipt ? 0 : $voucher->total_amount,
-                'credit'       => $isReceipt ? $voucher->total_amount : 0,
+                'debit'       => $isReceipt ? 0 : $voucher->total_amount,
+                'credit'      => $isReceipt ? $voucher->total_amount : 0,
                 'balance'     => 0,
             ]);
-            $this->recalculateCustomerBalance((int) $voucher->party_id);
+            $this->walletBalance->recalculateCustomer((int) $voucher->party_id);
         }
 
         if ($voucher->party_type === 'supplier' && $voucher->party_id) {
-            // payment (صرف) = we paid supplier  → debit (reduces what we owe)
-            // receipt (قبض) = supplier paid us  → credit
+            // محفظة المورد (دائن − مدين) تقابل 2101 — نفس قاعدة المشتريات (QA 2.3):
+            // صرف للمورد → مدين (يقلل ما علينا) ، قبض من المورد → دائن
             $isPayment = $voucher->type === 'payment';
             SupplierWallet::create([
                 'supplier_id'      => $voucher->party_id,
                 'voucher_id'       => $voucher->id,
                 'date'             => $voucher->date,
                 'description'      => $voucher->description ?? $voucher->type_name,
-                'debit'           => $isPayment ? 0 : $voucher->total_amount,
-                'credit'            => $isPayment ? $voucher->total_amount : 0,
+                'debit'            => $isPayment ? $voucher->total_amount : 0,
+                'credit'           => $isPayment ? 0 : $voucher->total_amount,
                 'previous_balance' => 0,
                 'balance'          => 0,
             ]);
-            $this->recalculateSupplierBalance((int) $voucher->party_id);
+            $this->walletBalance->recalculateSupplier((int) $voucher->party_id);
         }
     }
 
@@ -256,36 +325,12 @@ class VouchersController extends Controller
     {
         if ($voucher->party_type === 'customer' && $voucher->party_id) {
             CustomerWallet::where('voucher_id', $voucher->id)->delete();
-            $this->recalculateCustomerBalance((int) $voucher->party_id);
+            $this->walletBalance->recalculateCustomer((int) $voucher->party_id);
         }
 
         if ($voucher->party_type === 'supplier' && $voucher->party_id) {
             SupplierWallet::where('voucher_id', $voucher->id)->delete();
-            $this->recalculateSupplierBalance((int) $voucher->party_id);
+            $this->walletBalance->recalculateSupplier((int) $voucher->party_id);
         }
-    }
-
-    private function recalculateCustomerBalance(int $customerId): void
-    {
-        $balance = 0;
-        foreach (CustomerWallet::where('customer_id', $customerId)->orderBy('id')->get() as $wallet) {
-            $balance += $wallet->debit - $wallet->credit;
-            $wallet->balance = $balance;
-            $wallet->save();
-        }
-        Customer::where('id', $customerId)->update(['wallet_balance' => $balance]);
-    }
-
-    private function recalculateSupplierBalance(int $supplierId): void
-    {
-        $prev = 0;
-        foreach (SupplierWallet::where('supplier_id', $supplierId)->orderBy('id')->get() as $wallet) {
-            $balance = $prev + $wallet->debit - $wallet->credit;
-            $wallet->previous_balance = $prev;
-            $wallet->balance          = $balance;
-            $wallet->save();
-            $prev = $balance;
-        }
-        Supplier::where('id', $supplierId)->update(['wallet_balance' => $prev]);
     }
 }

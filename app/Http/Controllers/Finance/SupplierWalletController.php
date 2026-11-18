@@ -9,6 +9,7 @@ use App\Models\Finance\Supplier;
 use App\Models\Finance\SupplierWallet;
 use App\Http\Requests\Finance\SupplierWalletRequest;
 use Illuminate\Support\Facades\DB;
+use App\Services\Finance\WalletBalanceService;
 
 class SupplierWalletController extends Controller
 {
@@ -67,19 +68,14 @@ class SupplierWalletController extends Controller
 
     public function store(SupplierWalletRequest $request, $supplierId)
     {
-        $lastWallet = $this->objectModel::where('supplier_id', $supplierId)
-            ->orderBy('date', 'desc')->orderBy('id', 'desc')->first();
-        $previousBalance = $lastWallet ? $lastWallet->balance : 0;
-        $balance = $previousBalance + $request->credit - $request->debit;
-
-        DB::beginTransaction();
-        $this->objectModel::create(array_merge($request->validated(), [
-            'previous_balance' => $previousBalance,
-            'balance'          => $balance,
-        ]));
-        DB::commit();
-
-        Supplier::where('id', $supplierId)->update(['wallet_balance' => $balance]);
+        // الرصيد يُحسب في الخادم من الحركات (QA 2.6)
+        DB::transaction(function () use ($request, $supplierId) {
+            $this->objectModel::create(array_merge($request->validated(), [
+                'previous_balance' => 0,
+                'balance'          => 0,
+            ]));
+            app(WalletBalanceService::class)->recalculateSupplier((int) $supplierId);
+        });
 
         return redirect(route($this->route . '.index', $supplierId))
             ->with('message', 'تم الاضافة بنجاح')->with('status', 'success');
@@ -94,22 +90,12 @@ class SupplierWalletController extends Controller
 
     public function update(SupplierWalletRequest $request, $supplierId)
     {
-        $previousWallet = $this->objectModel::where('supplier_id', $supplierId)
-            ->where('id', '<', $request->id)
-            ->orderBy('date', 'desc')->orderBy('id', 'desc')->first();
-        $previousBalance = $previousWallet ? $previousWallet->balance : 0;
-        $balance = $previousBalance + $request->credit - $request->debit;
+        DB::transaction(function () use ($request, $supplierId) {
+            $result = $this->objectModel::findOrFail($request->id);
+            $result->update($request->validated());
+            app(WalletBalanceService::class)->recalculateSupplier((int) $supplierId);
+        });
 
-        DB::beginTransaction();
-        $result = $this->objectModel::findOrFail($request->id);
-        $result->update(array_merge($request->validated(), [
-            'previous_balance' => $previousBalance,
-            'balance'          => $balance,
-        ]));
-        DB::commit();
-
-        Supplier::where('id', $supplierId)->update(['wallet_balance' => $balance]);
-        
         return redirect(route($this->route . '.index', $supplierId))
             ->with('message', 'تم التعديل بنجاح')->with('status', 'success');
     }
@@ -118,9 +104,10 @@ class SupplierWalletController extends Controller
     {
         DB::beginTransaction();
         try {
-            foreach ($this->objectModel::whereIn('id', $request->id)->get() as $item) {
+            foreach ($this->objectModel::whereIn('id', (array) $request->id)->get() as $item) {
                 $item->delete();
             }
+            app(WalletBalanceService::class)->recalculateSupplier((int) $supplierId);
             DB::commit();
         } catch (\Exception $e) {
             DB::rollBack();

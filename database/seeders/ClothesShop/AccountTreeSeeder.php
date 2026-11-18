@@ -33,6 +33,7 @@ class AccountTreeSeeder extends Seeder
         AccountTree::firstOrCreate(['code' => '1106'], ['name' => 'المحافظ الإلكترونية', 'parent_id' => $currentAssets->id, 'type' => 'asset', 'level' => 2, 'is_active' => true]);
         AccountTree::firstOrCreate(['code' => '1107'], ['name' => 'البنك - أونلاين', 'parent_id' => $currentAssets->id, 'type' => 'asset', 'level' => 2, 'is_active' => true]);
         AccountTree::firstOrCreate(['code' => '1108'], ['name' => 'البنك - مباشر', 'parent_id' => $currentAssets->id, 'type' => 'asset', 'level' => 2, 'is_active' => true]);
+        AccountTree::firstOrCreate(['code' => '1109'], ['name' => 'أوراق قبض (شيكات تحت التحصيل)', 'parent_id' => $currentAssets->id, 'type' => 'asset', 'level' => 2, 'is_active' => true]);
 
         // ─── Fixed Assets (Level 2) ───
         AccountTree::firstOrCreate(['code' => '1201'], ['name' => 'أثاث ومعدات', 'parent_id' => $fixedAssets->id, 'type' => 'asset', 'level' => 2, 'is_active' => true]);

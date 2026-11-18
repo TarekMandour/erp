@@ -28,6 +28,7 @@ class PostingRuleSeeder extends Seeder
         // ملاحظة: هذا هو الحساب الموجود حالياً في الدليل باسم "شيكات مستحقة الدفع".
         // يستخدم في قواعد الشيكات الحالية كما في Seeder السابق.
         $checkPayable  = AccountTree::where('code', '2105')->first();
+        $checkReceivable = AccountTree::where('code', '1109')->first(); // أوراق قبض – شيكات تحت التحصيل
 
         $suppliers     = AccountTree::where('code', '2101')->first(); // الموردون
         $vatPayable    = AccountTree::where('code', '2102')->first(); // ضريبة القيمة المضافة
@@ -313,7 +314,7 @@ class PostingRuleSeeder extends Seeder
         $voucherPaymentAccounts = [
             'CASH' => $cash?->id,
             'CREDIT' => $bank?->id,
-            'INSTALLMENTS' => $checkPayable?->id,
+            'INSTALLMENTS' => $cash?->id, // تحصيل/سداد قسط = حركة نقدية (قابلة للتغيير بالبند المالي)
             'WALLET' => $wallet?->id,
             'BANK_ONLINE' => $bankOnline?->id,
             'BANK_DIRECT' => $bankDirect?->id,
@@ -331,7 +332,7 @@ class PostingRuleSeeder extends Seeder
                         default    => $otherRev?->id,
                     };
                     $rules[] = [
-                        'scenario_id'=>$scenario->id,'rule_group'=>1,'debit_account_id'=>$paymentAccountId,'credit_account_id'=>null,'amount_type'=>'total','amount_field'=>'total_amount','sort_order'=>1,'is_required'=>1
+                        'scenario_id'=>$scenario->id,'rule_group'=>1,'debit_account_id'=>($paymentCode === 'CHECK' ? $checkReceivable?->id : $paymentAccountId),'credit_account_id'=>null,'amount_type'=>'total','amount_field'=>'total_amount','sort_order'=>1,'is_required'=>1
                     ];
                     $rules[] = [
                         'scenario_id'=>$scenario->id,'rule_group'=>1,'debit_account_id'=>null,'credit_account_id'=>$creditAccountId,'amount_type'=>'total','amount_field'=>'total_amount','sort_order'=>2,'is_required'=>1

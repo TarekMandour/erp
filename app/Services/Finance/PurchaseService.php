@@ -130,17 +130,7 @@ class PurchaseService
 
     private function recalculateSupplierBalance(int $supplierId): void
     {
-        $prev = 0;
-
-        foreach (SupplierWallet::where('supplier_id', $supplierId)->orderBy('id')->get() as $entry) {
-            $balance = $prev + $entry->credit - $entry->debit;
-            $entry->previous_balance = $prev;
-            $entry->balance          = $balance;
-            $entry->save();
-            $prev = $balance;
-        }
-
-        Supplier::where('id', $supplierId)->update(['wallet_balance' => $prev]);
+        app(WalletBalanceService::class)->recalculateSupplier($supplierId);
     }
 
     // =========================================================================

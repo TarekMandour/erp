@@ -92,7 +92,9 @@ class JournalEntryBuilder
      */
     public function generateEntryNumber(Model $sourceModel, PostingScenario $scenario): string
     {
-        $prefix        = $this->getEntryPrefix($scenario);
+        $prefix        = method_exists($sourceModel, 'getEntryPrefix')
+            ? $sourceModel->getEntryPrefix()
+            : $this->getEntryPrefix($scenario);
         $dateFormatted = date('Ymd', strtotime($this->sourceModelHelper->getTransactionDate($sourceModel)));
         $pattern       = "{$prefix}-{$dateFormatted}-%";
 

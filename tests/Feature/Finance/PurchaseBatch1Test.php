@@ -35,37 +35,16 @@ use Tests\TestCase;
 /**
  * QA Batch 1 — المشتريات (سيناريوهات 12.x في ERP_Finance_QA_Report.xlsx)
  */
-class PurchaseBatch1Test extends TestCase
+class PurchaseBatch1Test extends FinanceTestCase
 {
-    use DatabaseTransactions;
-
-    private static bool $migrated = false;
-
     private Supplier $supplier;
     private Warehouse $warehouse;
     private Product $pen;
     private Treasury $treasury;
 
-    /**
-     * قاعدة اختبار منفصلة (erp_testing): مجلد migrations الأساسي ثم finance بنفس ترتيب الإنتاج
-     */
-    protected function setUpTraits()
-    {
-        if (! static::$migrated) {
-            Artisan::call('migrate:fresh', ['--force' => true]);
-            Artisan::call('migrate', ['--path' => 'database/migrations/finance', '--force' => true]);
-            static::$migrated = true;
-        }
-
-        return parent::setUpTraits();
-    }
-
     protected function setUp(): void
     {
         parent::setUp();
-        Cache::flush();
-
-        $this->seed(AccountTreeSeeder::class);
 
         foreach (['CASH', 'CREDIT', 'INSTALLMENTS', 'WALLET', 'BANK_ONLINE', 'BANK_DIRECT', 'CHECK'] as $t) {
             PostingScenario::create(['code' => "PURCHASE_$t", 'name' => "شراء $t", 'operation_type' => 'purchase', 'is_active' => 1, 'priority' => 10]);
@@ -75,10 +54,7 @@ class PurchaseBatch1Test extends TestCase
         }
 
         // تطبيق migration الإصلاح على البيانات المبذورة (قواعد + حساب 2105 + تعطيل المرتجعات)
-        (require base_path('database/migrations/finance/2026_11_18_000001_purchase_qa_batch1_fixes.php'))->up();
-
-        $admin = Admin::create(['name' => 'QA', 'email' => 'qa@test.local', 'phone' => '0100', 'password' => bcrypt('x'), 'is_active' => '1']);
-        $this->actingAs($admin, 'admin');
+        $this->runMigrationUp('2026_11_18_000001_purchase_qa_batch1_fixes.php');
 
         $this->supplier  = Supplier::create(['company_name' => 'مورد', 'name' => 'مورد', 'account_status' => 'active']);
         $this->warehouse = Warehouse::create(['name' => 'رئيسي', 'is_active' => true]);
@@ -87,11 +63,6 @@ class PurchaseBatch1Test extends TestCase
     }
 
     // ---------------------------------------------------------------- helpers
-
-    private function acc(string $code): AccountTree
-    {
-        return AccountTree::where('code', $code)->firstOrFail();
-    }
 
     private function payload(array $override = [], ?array $items = null): array
     {
@@ -125,21 +96,6 @@ class PurchaseBatch1Test extends TestCase
     }
 
     /** مجموع (مدين − دائن) لحساب من القيود المرحّلة */
-    /**
-     * رصيد الحساب (مدين − دائن) كما في شجرة الحسابات، مع التحقق من مطابقته لمجموع بنود القيود غير المسودة
-     */
-    private function ledger(string $code): float
-    {
-        $account = $this->acc($code);
-        $fromItems = round((float) JournalEntryItem::whereHas('entry', fn ($q) => $q->where('status', '!=', 'draft'))
-            ->where('account_tree_id', $account->id)
-            ->selectRaw('COALESCE(SUM(debit - credit),0) as b')->value('b'), 2);
-
-        $this->assertEquals($fromItems, (float) $account->balance, "رصيد الشجرة {$code} لا يطابق بنود القيود");
-
-        return (float) $account->balance;
-    }
-
     private function activeEntries(Purchase $p)
     {
         return JournalEntry::where('reference_type', Purchase::class)->where('reference_id', $p->id)

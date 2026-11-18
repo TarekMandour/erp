@@ -38,7 +38,7 @@ class AppServiceProvider extends ServiceProvider
 
         // ── Events → Listeners ───────────────────────────────────────────────
         Event::listen(OrderEvent::class,    PostOrderJournalEntry::class);
-        Event::listen(PurchaseEvent::class, PostPurchaseJournalEntry::class);
+        // PostPurchaseJournalEntry يُكتشف تلقائياً (Event Discovery)؛ التسجيل اليدوي كان يضاعف المهام (QA 11.12)
     }
 }
 

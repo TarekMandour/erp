@@ -23,6 +23,7 @@ class Voucher extends Model
         'description',
         'created_by',
         'financial_account_id',
+        'counter_account_id',
     ];
 
     protected $casts = [
@@ -80,6 +81,19 @@ class Voucher extends Model
             strtoupper($this->payment_type ?? 'CASH'),
             strtoupper($this->party_type  ?? 'OTHER')
         );
+    }
+
+    /**
+     * بادئة رقم القيد حسب نوع السند لا حسب الطرف (QA 2.3 / 11.5 / 11.6)
+     */
+    public function getEntryPrefix(): string
+    {
+        return $this->type === 'receipt' ? 'REC' : 'PAY';
+    }
+
+    public function counterAccount()
+    {
+        return $this->belongsTo(AccountTree::class, 'counter_account_id');
     }
 
     public function getFallbackScenarioCode(): string

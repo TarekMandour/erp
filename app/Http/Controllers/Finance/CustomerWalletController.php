@@ -9,6 +9,7 @@ use App\Models\Finance\Customer;
 use App\Models\Finance\CustomerWallet;
 use App\Http\Requests\Finance\CustomerWalletRequest;
 use Illuminate\Support\Facades\DB;
+use App\Services\Finance\WalletBalanceService;
 
 class CustomerWalletController extends Controller
 {
@@ -64,9 +65,11 @@ class CustomerWalletController extends Controller
 
     public function store(CustomerWalletRequest $request, $customerId)
     {
-        DB::beginTransaction();
-        $this->objectModel::create($request->validated());
-        DB::commit();
+        // الرصيد يُحسب في الخادم من الحركات (QA 2.6)
+        DB::transaction(function () use ($request, $customerId) {
+            $this->objectModel::create(array_merge($request->validated(), ['balance' => 0]));
+            app(WalletBalanceService::class)->recalculateCustomer((int) $customerId);
+        });
 
         return redirect(route($this->route . '.index', $customerId))
             ->with('message', 'تم الاضافة بنجاح')->with('status', 'success');
@@ -81,10 +84,11 @@ class CustomerWalletController extends Controller
 
     public function update(CustomerWalletRequest $request, $customerId)
     {
-        DB::beginTransaction();
-        $result = $this->objectModel::findOrFail($request->id);
-        $result->update($request->validated());
-        DB::commit();
+        DB::transaction(function () use ($request, $customerId) {
+            $result = $this->objectModel::findOrFail($request->id);
+            $result->update($request->validated());
+            app(WalletBalanceService::class)->recalculateCustomer((int) $customerId);
+        });
 
         return redirect(route($this->route . '.index', $customerId))
             ->with('message', 'تم التعديل بنجاح')->with('status', 'success');
@@ -94,9 +98,10 @@ class CustomerWalletController extends Controller
     {
         DB::beginTransaction();
         try {
-            foreach ($this->objectModel::whereIn('id', $request->id)->get() as $item) {
+            foreach ($this->objectModel::whereIn('id', (array) $request->id)->get() as $item) {
                 $item->delete();
             }
+            app(WalletBalanceService::class)->recalculateCustomer((int) $customerId);
             DB::commit();
         } catch (\Exception $e) {
             DB::rollBack();
