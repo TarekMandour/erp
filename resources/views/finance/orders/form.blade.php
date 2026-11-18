@@ -366,7 +366,7 @@
                         @endif
                     </div>
                     <input type="hidden" name="offer_id" id="offer_id_input" value="{{ $isEdit ? ($d->offer_id ?? '') : '' }}">
-                    <input type="hidden" name="offer_discount" id="offer_discount_input" value="{{ $isEdit ? (float)$d->offer_discount : 0 }}">
+                    <input type="hidden" name="offer_discount" id="offer_discount_input" data-on-shipping="{{ $isEdit && $d->offer?->type === 'free_shipping' ? 1 : 0 }}" value="{{ $isEdit ? (float)$d->offer_discount : 0 }}">
                 </div>
                 <div class="mb-5">
                     <label class="form-label">المبلغ المدفوع</label>

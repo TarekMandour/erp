@@ -460,29 +460,43 @@ $(function () {
         $row.find('.item-total-cell').text(total.toFixed(2));
     }
 
+    function round2(n) { return Math.round((n + Number.EPSILON) * 100) / 100; }
+
     function updateSummary() {
-        var subtotal = 0, totalDisc = 0, totalTax = 0;
+        var shipping      = parseFloat($('#shipping_cost').val()) || 0;
+        var couponDisc    = parseFloat($('#coupon_discount_input').val()) || 0;
+        var offerDisc     = parseFloat($('#offer_discount_input').val()) || 0;
+        var shippingOffer = $('#offer_discount_input').data('on-shipping') ? offerDisc : 0;
+
+        var lines = [], totalDisc = 0;
         $('#items-body .item-row').each(function () {
             var $r   = $(this);
             var qty  = parseFloat($r.find('.item-qty').val())   || 0;
             var p    = parseFloat($r.find('.item-price').val()) || 0;
             var disc = parseFloat($r.find('.item-disc').val())  || 0;
-            var tax  = parseFloat($r.find('.item-tax').val())   || 0;
-            var gross = qty * p - disc;
             totalDisc += disc;
-            if (pricingMode === 'inclusive') {
-                // الضريبة مُدرجة في السعر: tax = gross * rate / (100 + rate)
-                var lineTax = gross * tax / (100 + tax);
-                totalTax += lineTax;
-                subtotal += gross - lineTax; // السعر قبل الضريبة
-            } else {
-                subtotal  += gross;
-                totalTax  += gross * tax / 100;
-            }
+            lines.push({ net: round2(qty * p - disc), rate: parseFloat($r.find('.item-tax').val()) || 0 });
         });
-        var shipping      = parseFloat($('#shipping_cost').val()) || 0;
-        var couponDisc    = parseFloat($('#coupon_discount_input').val()) || 0;
-        var offerDisc     = parseFloat($('#offer_discount_input').val()) || 0;
+
+        // QA 6: خصم الكوبون/العرض يُوزَّع على البنود قبل الضريبة (نفس حساب الخادم)
+        var itemsNet = lines.reduce(function (s, l) { return s + l.net; }, 0);
+        var invDisc  = Math.min(Math.max(0, couponDisc + offerDisc - shippingOffer), itemsNet);
+        var given = 0, lastIdx = -1;
+        lines.forEach(function (l, i) {
+            l.alloc = (invDisc > 0 && itemsNet > 0 && l.net > 0) ? round2(invDisc * l.net / itemsNet) : 0;
+            given += l.alloc; if (l.net > 0) lastIdx = i;
+        });
+        if (lastIdx >= 0 && invDisc > 0) lines[lastIdx].alloc = round2(lines[lastIdx].alloc + invDisc - given);
+
+        var subtotal = 0, totalTax = 0;
+        lines.forEach(function (l) {
+            var taxable = l.net - l.alloc;
+            var lineTax = pricingMode === 'inclusive'
+                ? round2(taxable * l.rate / (100 + l.rate))
+                : round2(taxable * l.rate / 100);
+            totalTax += lineTax;
+            subtotal += pricingMode === 'inclusive' ? l.net - lineTax : l.net;
+        });
         $('#summary-subtotal').text(subtotal.toFixed(2) + ' ر.س');
         $('#summary-discount').text(totalDisc.toFixed(2) + ' ر.س');
         $('#summary-tax').text(totalTax.toFixed(2) + ' ر.س');
@@ -499,7 +513,7 @@ $(function () {
         } else {
             $('#summary-offer-row').addClass('d-none');
         }
-        var total = Math.max(0, subtotal + totalTax + shipping - couponDisc - offerDisc);
+        var total = Math.max(0, round2(subtotal + totalTax + shipping - couponDisc - offerDisc));
         $('#summary-total').text(total.toFixed(2) + ' ر.س');
     }
 
@@ -661,7 +675,7 @@ $(function () {
         }, function (res) {
             if (res.valid) {
                 $('#offer_id_input').val(res.offer_id);
-                $('#offer_discount_input').val(res.discount);
+                $('#offer_discount_input').val(res.discount).data('on-shipping', res.on_shipping ? 1 : 0);
                 $('#offer_feedback')
                     .text(res.message)
                     .removeClass('text-danger text-muted')
@@ -671,7 +685,7 @@ $(function () {
             } else {
                 if (silent) {
                     $('#offer_id_input').val('');
-                    $('#offer_discount_input').val(0);
+                    $('#offer_discount_input').val(0).data('on-shipping', 0);
                     updateSummary();
                 }
                 $('#offer_feedback')
@@ -689,7 +703,7 @@ $(function () {
 
     $('#remove_offer_btn').on('click', function () {
         $('#offer_id_input').val('');
-        $('#offer_discount_input').val(0);
+        $('#offer_discount_input').val(0).data('on-shipping', 0);
         $('#offer_select').val(null).trigger('change');
         $('#offer_feedback').text('').removeClass('text-success text-danger').addClass('text-muted');
         $(this).addClass('d-none');

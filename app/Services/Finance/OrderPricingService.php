@@ -77,6 +77,23 @@ class OrderPricingService
             $offerDiscount = round(min($result['discount'], $cap), 2);
         }
 
+        // ── الضريبة بعد خصم الكوبون والعرض ───────────────────────
+        // قرار المالك: خصم الفاتورة (كوبون/عرض) يُخفِّض وعاء الضريبة. يُوزَّع على البنود
+        // بنسبة صافي كل بند ثم تُحسب ضريبة كل بند على صافيه بعد الخصم (لاختلاف النسب بين البنود).
+        // خصم الشحن المجاني يخص الشحن فلا يدخل في وعاء ضريبة البنود.
+        $shippingOffer   = (isset($offer) && $offerId && $offer->type === 'free_shipping') ? $offerDiscount : 0.0;
+        $invoiceDiscount = round($couponDiscount + $offerDiscount - $shippingOffer, 2);
+        $inclusive       = Helper::pricingMode() === 'inclusive';
+        $alloc           = self::allocate(array_column($lines, 'net'), $invoiceDiscount);
+
+        foreach ($lines as $i => &$line) {
+            $taxable = round($line['net'] - $alloc[$i], 2);
+            $line['invoice_discount'] = $alloc[$i];
+            $line['tax']   = self::lineTax($taxable, $line['tax_rate'], $inclusive);
+            $line['total'] = $inclusive ? $taxable : round($taxable + $line['tax'], 2);
+        }
+        unset($line);
+
         // ── الإجماليات ───────────────────────────────────────────
         $discount = round(array_sum(array_column($lines, 'discount')), 2);
         $tax      = round(array_sum(array_column($lines, 'tax')), 2);
@@ -103,6 +120,46 @@ class OrderPricingService
                 'total'           => max(0, $total),
             ],
         ];
+    }
+
+    /**
+     * توزيع خصم الفاتورة على البنود بنسبة صافي كل بند (الفرق التقريبي على آخر بند)
+     *
+     * @param  float[]  $nets
+     * @return float[]
+     */
+    public static function allocate(array $nets, float $discount): array
+    {
+        $nets  = array_values(array_map('floatval', $nets));
+        $sum   = array_sum($nets);
+        $alloc = array_fill(0, count($nets), 0.0);
+        if ($discount <= 0 || $sum <= 0) {
+            return $alloc;
+        }
+
+        $discount = min($discount, $sum);
+        $last     = null;
+        $given    = 0.0;
+        foreach ($nets as $i => $net) {
+            if ($net <= 0) {
+                continue;
+            }
+            $alloc[$i] = round($discount * $net / $sum, 2);
+            $given    += $alloc[$i];
+            $last      = $i;
+        }
+        if ($last !== null) {
+            $alloc[$last] = round(min($nets[$last], $alloc[$last] + ($discount - $given)), 2);
+        }
+
+        return $alloc;
+    }
+
+    public static function lineTax(float $taxable, float $rate, bool $inclusive): float
+    {
+        return $inclusive
+            ? round($taxable * $rate / (100 + $rate), 2)
+            : round($taxable * $rate / 100, 2);
     }
 
     // =========================================================================

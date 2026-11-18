@@ -430,6 +430,7 @@ class OrdersController extends Controller
         return response()->json([
             'valid'    => true,
             'offer_id' => $offer->id,
+            'on_shipping' => $offer->type === 'free_shipping',
             'discount' => $result['discount'],
             'message'  => $result['message'],
         ]);

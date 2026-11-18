@@ -267,22 +267,28 @@
                     </tr>
                 </thead>
                 <tbody>
+                    @php
+                        // QA 6: خصم الكوبون/العرض يُوزَّع على البنود قبل الضريبة (نفس حساب الحفظ)
+                        $shipOffer = $data->offer?->type === 'free_shipping' ? (float)$data->offer_discount : 0;
+                        $invAlloc  = \App\Services\Finance\OrderPricingService::allocate(
+                            $data->items->map(fn ($it) => round((float)$it->quantity * (float)$it->unit_price - (float)$it->discount, 2))->all(),
+                            (float)$data->coupon_discount + (float)$data->offer_discount - $shipOffer
+                        );
+                    @endphp
                     @foreach($data->items as $i => $item)
                     @php
                         $qty      = (float)$item->quantity;
                         $price    = (float)$item->unit_price;
-                        $disc     = (float)$item->discount;
+                        $disc     = (float)$item->discount + ($invAlloc[$i] ?? 0);
                         $taxRate  = (float)$item->tax_rate;
+                        $gross    = round($qty * $price - $disc, 2);
+                        $taxAmt   = \App\Services\Finance\OrderPricingService::lineTax($gross, $taxRate, $pricingMode === 'inclusive');
                         if ($pricingMode === 'inclusive') {
                             // السعر قبل الضريبة = price / (1 + rate/100)
                             $unitPriceBefore = $taxRate > 0 ? round($price / (1 + $taxRate / 100), 4) : $price;
-                            $gross           = $qty * $price - $disc;
-                            $taxAmt          = round($gross * $taxRate / (100 + $taxRate), 2);
                             $rowTot          = $gross;
                         } else {
                             $unitPriceBefore = $price;
-                            $gross           = $qty * $price - $disc;
-                            $taxAmt          = round($gross * $taxRate / 100, 2);
                             $rowTot          = $gross + $taxAmt;
                         }
                     @endphp
@@ -322,6 +328,18 @@
                 <tr>
                     <td class="text-gray-600">الخصم الكلي</td>
                     <td class="text-end fw-bold text-danger">- {{number_format((float)$data->discount, 2)}} ر.س</td>
+                </tr>
+                @endif
+                @if((float)$data->coupon_discount > 0)
+                <tr>
+                    <td class="text-gray-600">خصم الكوبون{{ $data->coupon ? ' (' . $data->coupon->code . ')' : '' }}</td>
+                    <td class="text-end fw-bold text-danger">- {{number_format((float)$data->coupon_discount, 2)}} ر.س</td>
+                </tr>
+                @endif
+                @if((float)$data->offer_discount > 0)
+                <tr>
+                    <td class="text-gray-600">خصم العرض{{ $data->offer ? ' (' . $data->offer->name . ')' : '' }}</td>
+                    <td class="text-end fw-bold text-danger">- {{number_format((float)$data->offer_discount, 2)}} ر.س</td>
                 </tr>
                 @endif
                 @if((float)$data->tax > 0)

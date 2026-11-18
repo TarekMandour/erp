@@ -205,14 +205,14 @@ class SalesBatch6Test extends FinanceTestCase
     public function test_status_changes_keep_number_and_cancel_reverses_everything(): void
     {
         $c = $this->coupon(['value' => 5]);
-        $this->order(['paid' => 52.5, 'coupon_id' => $c->id]);
+        $this->order(['paid' => 51.75, 'coupon_id' => $c->id]);
         $o = $this->lastOrder();
         $number = $o->order_number;
         $entries = JournalEntry::count();
 
         $payload = fn ($status) => [
             'id' => $o->id, 'customer_id' => $this->customer->id, 'warehouse_id' => $this->warehouse->id, 'date' => '2026-11-18',
-            'payment_type' => 'cash', 'status' => $status, 'paid' => 52.5, 'coupon_id' => $c->id,
+            'payment_type' => 'cash', 'status' => $status, 'paid' => 51.75, 'coupon_id' => $c->id,
             'items' => [['product_id' => $this->pen->id, 'quantity' => 5, 'unit_price' => 10, 'tax_rate' => 15]],
         ];
 
@@ -234,7 +234,7 @@ class SalesBatch6Test extends FinanceTestCase
     public function test_delete_reverses_sales_and_cost_entries(): void
     {
         $c = $this->coupon(['value' => 5]);
-        $this->order(['paid' => 52.5, 'coupon_id' => $c->id]);
+        $this->order(['paid' => 51.75, 'coupon_id' => $c->id]);
         $this->assertSame(1, (int) $c->fresh()->used_count);
 
         $this->post(route('finance.orders.delete'), ['id' => $this->lastOrder()->id]);
@@ -245,6 +245,35 @@ class SalesBatch6Test extends FinanceTestCase
         $this->assertEquals(0, $this->ledger('1103'));
         $this->assertSame(0, (int) $c->fresh()->used_count);
         $this->assertSame(0, CouponUsage::count());
+    }
+
+    /**
+     * 15.15 — قرار المالك: خصم الكوبون/العرض قبل الضريبة.
+     * قلم 50 (ضريبة 15%) + دواء 40 (0%) وكوبون 18 ← يُوزَّع 10 / 8، الضريبة = 40 × 15% = 6 (كانت 7.50)؛
+     * الشحن المجاني يخص الشحن ولا يخفض وعاء الضريبة.
+     */
+    public function test_vat_is_calculated_after_coupon_and_offer(): void
+    {
+        $coupon = $this->coupon(['value' => 18]);
+        $free   = $this->offer(['type' => 'free_shipping', 'value' => null, 'min_amount' => 50]);
+
+        $this->order(['coupon_id' => $coupon->id, 'offer_id' => $free->id, 'shipping_cost' => 15, 'paid' => 78], [
+            ['product_id' => $this->pen->id, 'quantity' => 5, 'unit_price' => 10, 'tax_rate' => 15],
+            ['product_id' => $this->med->id, 'quantity' => 10, 'unit_price' => 4, 'tax_rate' => 0],
+        ])->assertSessionHasNoErrors();
+        $o = $this->lastOrder();
+
+        $this->assertEquals(6.0, (float) $o->tax);
+        $this->assertEquals(78.0, (float) $o->total);
+        $this->assertEquals([46.0, 32.0], $o->items->sortBy('id')->pluck('total')->map(fn ($v) => (float) $v)->values()->all());
+        $this->assertEquals(
+            ['1101' => 78.0, '5009' => 18.0, '5010' => 15.0, '4001' => -90.0, '4004' => -15.0, '2102' => -6.0, '5001' => 50.0, '1103' => -50.0],
+            $this->postedLines($o)
+        );
+
+        // الشاشة تعرض نفس الضريبة: ajax العرض يُعلِم أنه خصم شحن
+        $res = $this->applyOffer($free, [['product_id' => $this->pen->id, 'quantity' => 5, 'unit_price' => 10, 'tax_rate' => 15]], ['shipping_cost' => 15]);
+        $this->assertTrue($res['on_shipping']);
     }
 
     // ================================================================ الكوبونات
