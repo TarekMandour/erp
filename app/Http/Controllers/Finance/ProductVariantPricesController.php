@@ -121,7 +121,9 @@ class ProductVariantPricesController extends Controller
             'product_id'  => 'required|exists:products,id',
             'variant_id'  => 'nullable|exists:product_variants,id',
             'price'       => 'required|numeric|min:0',
-            'sale_price'  => 'nullable|numeric|min:0',
+            'sale_price'  => 'nullable|numeric|min:0|lte:price',
+            'tier_qty.*'     => 'nullable|numeric|min:0',
+            'tier_price.*'   => 'nullable|numeric|min:0',
             'sale_start'  => 'nullable|date',
             'sale_end'    => 'nullable|date|after_or_equal:sale_start',
             'customer_ids'   => 'nullable|array',
@@ -129,7 +131,7 @@ class ProductVariantPricesController extends Controller
             'valid_from'  => 'nullable|date',
             'valid_to'    => 'nullable|date|after_or_equal:valid_from',
             'priority'    => 'integer|min:0',
-        ]);
+        ], $this->priceMessages());
 
         // Build quantity_prices from submitted tiers
         $tiers = [];
@@ -193,7 +195,9 @@ class ProductVariantPricesController extends Controller
             'product_id'     => 'required|exists:products,id',
             'variant_id'     => 'nullable|exists:product_variants,id',
             'price'          => 'required|numeric|min:0',
-            'sale_price'     => 'nullable|numeric|min:0',
+            'sale_price'     => 'nullable|numeric|min:0|lte:price',
+            'tier_qty.*'     => 'nullable|numeric|min:0',
+            'tier_price.*'   => 'nullable|numeric|min:0',
             'sale_start'     => 'nullable|date',
             'sale_end'       => 'nullable|date|after_or_equal:sale_start',
             'customer_ids'   => 'nullable|array',
@@ -201,7 +205,7 @@ class ProductVariantPricesController extends Controller
             'valid_from'     => 'nullable|date',
             'valid_to'       => 'nullable|date|after_or_equal:valid_from',
             'priority'       => 'integer|min:0',
-        ]);
+        ], $this->priceMessages());
 
         $tiers = [];
         if ($request->filled('tier_qty') && $request->filled('tier_price')) {
@@ -264,5 +268,19 @@ class ProductVariantPricesController extends Controller
             });
 
         return response()->json($variants);
+    }
+
+    /**
+     * QA 5.14: سعر التخفيض ≤ السعر، والشرائح بلا قيم سالبة
+     */
+    private function priceMessages(): array
+    {
+        return [
+            'sale_price.lte'     => 'سعر التخفيض يجب ألا يتجاوز السعر الأساسي',
+            'tier_qty.*.min'     => 'كمية الشريحة لا يمكن أن تكون سالبة',
+            'tier_price.*.min'   => 'سعر الشريحة لا يمكن أن يكون سالباً',
+            'sale_end.after_or_equal' => 'تاريخ نهاية التخفيض يجب أن يكون بعد تاريخ البداية',
+            'valid_to.after_or_equal' => 'تاريخ نهاية الصلاحية يجب أن يكون بعد تاريخ البداية',
+        ];
     }
 }

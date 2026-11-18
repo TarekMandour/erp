@@ -48,6 +48,20 @@
                 </div>
             </div>
 
+            <div class="row mb-7">
+                <div class="col-md-12 fv-row">
+                    <label class="form-label required">الحساب المقابل</label>
+                    <select class="form-select form-select-solid" name="counter_account_id" data-control="select2" data-placeholder="اختر الحساب المقابل">
+                        <option value="">-- اختر الحساب المقابل --</option>
+                        @foreach($counterAccounts as $acc)
+                            <option value="{{$acc->id}}" {{ old('counter_account_id', $data->counter_account_id ?? null) == $acc->id ? 'selected' : '' }}>{{$acc->code}} - {{$acc->name}}</option>
+                        @endforeach
+                    </select>
+                    <div class="text-muted fs-7 mt-1">يُنشأ قيد مرحّل على حساب الموردين 2101 مقابل هذا الحساب (للرصيد الافتتاحي اختر 3001 رأس المال).</div>
+                    @error('counter_account_id')<div class="text-danger mt-1">{{$message}}</div>@enderror
+                </div>
+            </div>
+
         </div>
     </div>
 </div>

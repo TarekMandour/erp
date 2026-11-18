@@ -44,7 +44,22 @@ $(function () {
                 $variant.append('<option value="' + v.id + '">' + v.sku + '</option>');
             });
         });
+        loadUnits();
     });
+    $('#variant_id').on('change', loadUnits);
+
+    // وحدات التحويل للمنتج/المتغير (نفس مصدر شاشة التحويلات)
+    function loadUnits() {
+        var $unit = $('#unit_conversion_id');
+        $unit.html('<option value="">وحدة الأساس</option>');
+        var productId = $('#product_id').val();
+        if (!productId) return;
+        $.get("{{ route('finance.inventory.transfers.ajax.units') }}", { product_id: productId, variant_id: $('#variant_id').val() }, function (res) {
+            (res.results || []).forEach(function (u) {
+                $unit.append('<option value="' + u.id + '">' + u.text + '</option>');
+            });
+        });
+    }
 });
 </script>
 @endsection

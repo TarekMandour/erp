@@ -130,59 +130,36 @@ class InventoryController extends Controller
     {
         $item       = $id ? InventoryItem::with(['product', 'variant', 'warehouse'])->findOrFail($id) : null;
         $warehouses = Warehouse::where('is_active', true)->orderBy('name')->get();
+        $counterAccounts = app(\App\Services\Finance\ManualJournalService::class)->counterAccounts()->where('code', '!=', '1103');
 
-        return view('finance.inventory.adjust', compact('item', 'warehouses'));
+        return view('finance.inventory.adjust', compact('item', 'warehouses', 'counterAccounts'));
     }
 
     public function storeAdjust(Request $request)
     {
-        $request->validate([
-            'warehouse_id' => 'required|exists:warehouses,id',
-            'product_id'   => 'required|exists:products,id',
-            'variant_id'   => 'nullable|exists:product_variants,id',
-            'type'         => 'required|in:in,out,adjustment',
-            'quantity'     => 'required|numeric|min:0.001',
-            'unit_cost'    => 'nullable|numeric|min:0',
-            'notes'        => 'nullable|string|max:500',
+        $data = $request->validate([
+            'warehouse_id'       => ['required', \Illuminate\Validation\Rule::exists('warehouses', 'id')->where('is_active', 1)],
+            'product_id'         => 'required|exists:products,id',
+            'variant_id'         => 'nullable|exists:product_variants,id',
+            'unit_conversion_id' => 'nullable|exists:unit_conversions,id',
+            'type'               => 'required|in:in,out,adjustment',
+            'quantity'           => 'required|numeric|min:0',
+            'unit_cost'          => 'nullable|numeric|min:0',
+            'counter_account_id' => 'required|exists:account_trees,id',
+            'notes'              => 'nullable|string|max:500',
+        ], [], [
+            'warehouse_id' => 'المستودع', 'product_id' => 'المنتج', 'variant_id' => 'المتغير', 'type' => 'نوع الحركة',
+            'quantity' => 'الكمية', 'unit_cost' => 'تكلفة الوحدة', 'counter_account_id' => 'الحساب المقابل',
         ]);
 
-        $product   = Product::findOrFail($request->product_id);
-        $variantId = ($product->has_variants && $request->filled('variant_id')) ? $request->variant_id : null;
+        // adjustment يعني «الكمية النهائية» ولذا يقبل الصفر
+        if ($data['type'] !== 'adjustment' && (float) $data['quantity'] <= 0) {
+            return back()->withInput()->withErrors(['quantity' => 'الكمية يجب أن تكون أكبر من صفر']);
+        }
 
-        DB::transaction(function () use ($request, $variantId) {
-            // Upsert inventory_items
-            $item = InventoryItem::firstOrCreate([
-                'warehouse_id' => $request->warehouse_id,
-                'product_id'   => $request->product_id,
-                'variant_id'   => $variantId,
-            ]);
+        app(\App\Services\Finance\InventoryMovementService::class)->record($data);
 
-            $qty = (float) $request->quantity;
-
-            if ($request->type === 'in') {
-                $item->quantity = $item->quantity + $qty;
-            } elseif ($request->type === 'out') {
-                $item->quantity = max(0, $item->quantity - $qty);
-            } else {
-                // adjustment: set absolute quantity
-                $item->quantity = $qty;
-            }
-            $item->save();
-
-            // Record transaction
-            InventoryTransaction::create([
-                'warehouse_id' => $request->warehouse_id,
-                'product_id'   => $request->product_id,
-                'variant_id'   => $variantId,
-                'type'         => $request->type,
-                'quantity'     => $qty,
-                'unit_cost'    => $request->unit_cost ?? 0,
-                'notes'        => $request->notes,
-                'created_by'   => Auth::guard('admin')->id(),
-            ]);
-        });
-
-        return redirect()->route($this->route . '.index')->with('success', 'تم تحديث المخزون بنجاح');
+        return redirect()->route($this->route . '.index')->with('message', 'تم تسجيل حركة المخزون وترحيل قيدها بنجاح');
     }
 
     // -------------------------------------------------------

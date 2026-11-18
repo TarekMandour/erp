@@ -110,7 +110,11 @@ class InventoryTransferController extends Controller
         ]);
 
         $product   = Product::findOrFail($request->product_id);
-        $variantId = ($product->has_variants && $request->filled('variant_id')) ? $request->variant_id : null;
+        $movement  = app(\App\Services\Finance\InventoryMovementService::class);
+        // المتغير إلزامي للمنتج ذي المتغيرات ويجب أن يتبع المنتج (QA 5.3)
+        $variantId = $movement->resolveVariant($product, $request->variant_id);
+        // تكلفة التحويل = متوسط التكلفة (QA 5.9)؛ التحويل لا يغيّر قيمة المخزون الإجمالية فلا قيد له
+        $unitCost  = round((float) ($movement->costTarget($product, $variantId)->average_cost ?? 0), 4);
 
         $enteredQty      = (float) $request->quantity;
         $unitConversion  = $request->filled('unit_conversion_id') ? UnitConversion::find($request->unit_conversion_id) : null;
@@ -130,7 +134,7 @@ class InventoryTransferController extends Controller
             ]);
         }
 
-        DB::transaction(function () use ($request, $variantId, $qty, $enteredQty, $sourceItem, $product, $unitConversion) {
+        DB::transaction(function () use ($request, $variantId, $qty, $enteredQty, $sourceItem, $product, $unitConversion, $unitCost) {
             $ref = InventoryTransfer::generateReference();
 
             // 1. Create transfer record
@@ -172,7 +176,7 @@ class InventoryTransferController extends Controller
                 'variant_id'   => $variantId,
                 'type'         => 'out',
                 'quantity'     => $qty,
-                'unit_cost'    => 0,
+                'unit_cost'    => round($unitCost, 2),
                 'notes'        => $transNote,
                 'created_by'   => $adminId,
             ]);
@@ -184,7 +188,7 @@ class InventoryTransferController extends Controller
                 'variant_id'   => $variantId,
                 'type'         => 'in',
                 'quantity'     => $qty,
-                'unit_cost'    => 0,
+                'unit_cost'    => round($unitCost, 2),
                 'notes'        => $transNote,
                 'created_by'   => $adminId,
             ]);
@@ -198,7 +202,7 @@ class InventoryTransferController extends Controller
                 'unit_conversion_id' => $unitConversion?->id,
                 'type'           => 'transfer_out',
                 'quantity'       => $qty,
-                'unit_cost'      => 0,
+                'unit_cost'      => $unitCost,
                 'reference_type' => InventoryTransfer::class,
                 'reference_id'   => $transfer->id,
                 'notes'          => $transNote,
@@ -213,7 +217,7 @@ class InventoryTransferController extends Controller
                 'unit_conversion_id' => $unitConversion?->id,
                 'type'           => 'transfer_in',
                 'quantity'       => $qty,
-                'unit_cost'      => 0,
+                'unit_cost'      => $unitCost,
                 'reference_type' => InventoryTransfer::class,
                 'reference_id'   => $transfer->id,
                 'notes'          => $transNote,
@@ -222,7 +226,7 @@ class InventoryTransferController extends Controller
         });
 
         return redirect()->route($this->route . '.index')
-            ->with('success', 'تم تنفيذ التحويل بنجاح.');
+            ->with('message', 'تم تنفيذ التحويل بنجاح.');
     }
 
     // -------------------------------------------------------

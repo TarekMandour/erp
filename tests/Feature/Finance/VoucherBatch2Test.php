@@ -237,9 +237,11 @@ class VoucherBatch2Test extends FinanceTestCase
     {
         $this->post(route('finance.customers.wallet.store', $this->customer->id), [
             'customer_id' => $this->customer->id, 'date' => '2026-11-18', 'debit' => 300, 'credit' => 0, 'balance' => 999,
+            'counter_account_id' => $this->acc('3001')->id, // الدفعة 4: الحركة اليدوية تُرحَّل بقيد
         ]);
         $this->post(route('finance.customers.wallet.store', $this->customer->id), [
             'customer_id' => $this->customer->id, 'date' => '2026-11-18', 'debit' => 0, 'credit' => 100, 'balance' => 999,
+            'counter_account_id' => $this->acc('3001')->id, // الدفعة 4: الحركة اليدوية تُرحَّل بقيد
         ]);
         $this->assertEquals(200, (float) $this->customer->fresh()->wallet_balance);
         $this->assertEquals(200, (float) CustomerWallet::latest('id')->value('balance'));
@@ -250,6 +252,7 @@ class VoucherBatch2Test extends FinanceTestCase
 
         $this->post(route('finance.suppliers.wallet.store', $this->supplier->id), [
             'supplier_id' => $this->supplier->id, 'date' => '2026-11-18', 'debit' => 0, 'credit' => 1000,
+            'counter_account_id' => $this->acc('3001')->id,
         ]);
         $this->assertEquals(1000, (float) $this->supplier->fresh()->wallet_balance);
     }

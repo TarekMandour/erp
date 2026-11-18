@@ -10,6 +10,7 @@ use App\Models\Finance\CustomerWallet;
 use App\Http\Requests\Finance\CustomerWalletRequest;
 use Illuminate\Support\Facades\DB;
 use App\Services\Finance\WalletBalanceService;
+use App\Services\Finance\WalletJournalService;
 
 class CustomerWalletController extends Controller
 {
@@ -60,54 +61,70 @@ class CustomerWalletController extends Controller
     public function create($customerId)
     {
         $customer = Customer::findOrFail($customerId);
-        return view($this->viewPath . '.create', compact('customer'));
+        $counterAccounts = app(WalletJournalService::class)->counterAccounts('1104');
+        return view($this->viewPath . '.create', compact('customer', 'counterAccounts'));
     }
 
     public function store(CustomerWalletRequest $request, $customerId)
     {
-        // الرصيد يُحسب في الخادم من الحركات (QA 2.6)
+        // الرصيد يُحسب في الخادم من الحركات، والحركة اليدوية تُرحَّل بقيد (QA 4.4 / 4.7)
         DB::transaction(function () use ($request, $customerId) {
-            $this->objectModel::create(array_merge($request->validated(), ['balance' => 0]));
+            $data = $request->safe()->except(['counter_account_id', 'balance']);
+            $row  = $this->objectModel::create(array_merge($data, ['balance' => 0]));
+            app(WalletJournalService::class)->sync($row, (int) $request->counter_account_id);
             app(WalletBalanceService::class)->recalculateCustomer((int) $customerId);
         });
 
         return redirect(route($this->route . '.index', $customerId))
-            ->with('message', 'تم الاضافة بنجاح')->with('status', 'success');
+            ->with('message', 'تم الاضافة وترحيل القيد بنجاح')->with('status', 'success');
     }
 
     public function edit($customerId, $id)
     {
         $customer = Customer::findOrFail($customerId);
         $data = $this->objectModel::findOrFail($id);
-        return view($this->viewPath . '.edit', compact('data', 'customer'));
+        $wallets = app(WalletJournalService::class);
+        $wallets->assertManual($data);
+        $data->counter_account_id = $wallets->counterAccountId($data);
+        $counterAccounts = $wallets->counterAccounts('1104');
+        return view($this->viewPath . '.edit', compact('data', 'customer', 'counterAccounts'));
     }
 
     public function update(CustomerWalletRequest $request, $customerId)
     {
         DB::transaction(function () use ($request, $customerId) {
             $result = $this->objectModel::findOrFail($request->id);
-            $result->update($request->validated());
+            app(WalletJournalService::class)->assertManual($result);
+            $result->update($request->safe()->except(['counter_account_id', 'balance']));
+            app(WalletJournalService::class)->sync($result->fresh(), (int) $request->counter_account_id);
             app(WalletBalanceService::class)->recalculateCustomer((int) $customerId);
         });
 
         return redirect(route($this->route . '.index', $customerId))
-            ->with('message', 'تم التعديل بنجاح')->with('status', 'success');
+            ->with('message', 'تم التعديل وتحديث القيد بنجاح')->with('status', 'success');
     }
 
+    /**
+     * حذف الحركة اليدوية = إلغاء قيدها بقيد عكسي ثم حذف الحركة؛ حركات المستندات تُحذف من مستندها
+     */
     public function destroy(Request $request, $customerId)
     {
-        DB::beginTransaction();
         try {
-            foreach ($this->objectModel::whereIn('id', (array) $request->id)->get() as $item) {
-                $item->delete();
-            }
-            app(WalletBalanceService::class)->recalculateCustomer((int) $customerId);
-            DB::commit();
+            DB::transaction(function () use ($request, $customerId) {
+                $ids = (array) ($request->id ?? $request->ids ?? []);
+                foreach ($this->objectModel::whereIn('id', $ids)->get() as $item) {
+                    app(WalletJournalService::class)->assertManual($item);
+                    app(WalletJournalService::class)->cancel($item);
+                    $item->delete();
+                }
+                app(WalletBalanceService::class)->recalculateCustomer((int) $customerId);
+            });
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json(['status' => 'error', 'message' => collect($e->errors())->flatten()->first()], 422);
         } catch (\Exception $e) {
-            DB::rollBack();
-            return response()->json(['status' => 'error', 'message' => 'عفوا لم يتم الحذف']);
+            return response()->json(['status' => 'error', 'message' => 'عفوا لم يتم الحذف'], 500);
         }
 
-        return response()->json(['status' => 'success', 'message' => 'تم الحذف بنجاح']);
+        return response()->json(['status' => 'success', 'message' => 'تم الحذف وإلغاء القيد بنجاح']);
     }
 }

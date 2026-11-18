@@ -268,6 +268,13 @@ class ProductsController extends Controller
 
         $result = $this->objectModel::whereId($request->id)->first();
 
+        // متوسط التكلفة يُحسب من حركات المخزون: لا يُقبل من النموذج إذا كان للمنتج مخزون أو حركات (QA 2.9)
+        $hasStock = \App\Models\Finance\InventoryItem::where('product_id', $result->id)->where('quantity', '!=', 0)->exists()
+            || \App\Models\Finance\InventoryTransaction::where('product_id', $result->id)->exists();
+        if ($hasStock) {
+            unset($data['average_cost']);
+        }
+
         $result->update($data);
 
         if ($request->hasFile('thumbnail') && $request->file('thumbnail')->isValid()) {

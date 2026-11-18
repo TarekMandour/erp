@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Finance;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
+use App\Services\Finance\InventoryMovementService;
+use Illuminate\Validation\ValidationException;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Yajra\DataTables\Facades\DataTables;
@@ -65,10 +67,11 @@ class WarehouseTransactionsController extends Controller
                 ->addColumn('date_display', fn($row) => $row->created_at->format('Y-m-d H:i'))
                 ->addColumn('action', function ($row) {
                     $edit   = '<a href="' . route($this->route . '.edit', $row->id) . '" class="btn btn-xs btn-icon btn-light-primary me-1" title="تعديل"><i class="bi bi-pencil fs-5"></i></a>';
-                    $delete = '<form method="POST" action="' . route($this->route . '.delete') . '" class="d-inline">'
+                    // الحركات اليدوية فقط تُعكس من هنا؛ حركات المستندات (مشتريات/تحويلات/عكس) تُدار من مصدرها
+                    $delete = $row->reference_type ? '' : '<form method="POST" action="' . route($this->route . '.delete') . '" class="d-inline">'
                         . csrf_field()
                         . '<input type="hidden" name="id" value="' . $row->id . '">'
-                        . '<button type="submit" class="btn btn-xs btn-icon btn-light-danger" title="حذف" onclick="return confirm(\'حذف هذه الحركة؟ سيتم عكس أثرها على رصيد المخزون\')"><i class="bi bi-trash fs-5"></i></button></form>';
+                        . '<button type="submit" class="btn btn-xs btn-icon btn-light-danger" title="عكس الحركة" onclick="return confirm(\'عكس هذه الحركة؟ ستُسجَّل حركة معاكسة ويُلغى قيدها بقيد عكسي\')"><i class="bi bi-arrow-counterclockwise fs-5"></i></button></form>';
                     return $edit . $delete;
                 })
                 ->rawColumns(['type_badge', 'action'])
@@ -89,8 +92,9 @@ class WarehouseTransactionsController extends Controller
         $products   = Product::orderBy('name')->get();
         $units      = Unit::orderBy('name')->get();
         $transaction = null;
+        $counterAccounts = app(\App\Services\Finance\ManualJournalService::class)->counterAccounts()->where('code', '!=', '1103');
 
-        return view('finance.warehouse-transactions.create', compact('warehouses', 'products', 'units', 'transaction'));
+        return view('finance.warehouse-transactions.create', compact('warehouses', 'products', 'units', 'transaction', 'counterAccounts'));
     }
 
     // -------------------------------------------------------
@@ -98,33 +102,29 @@ class WarehouseTransactionsController extends Controller
     // -------------------------------------------------------
     public function store(Request $request)
     {
-        $request->validate([
-            'warehouse_id' => 'required|exists:warehouses,id',
-            'product_id'   => 'required|exists:products,id',
-            'variant_id'   => 'nullable|exists:product_variants,id',
-            'unit_id'      => 'nullable|exists:units,id',
-            'type'         => 'required|in:in,out,adjustment',
-            'quantity'     => 'required|numeric|min:0.001',
-            'unit_cost'    => 'nullable|numeric|min:0',
-            'notes'        => 'nullable|string|max:500',
+        $data = $request->validate([
+            'warehouse_id'       => ['required', \Illuminate\Validation\Rule::exists('warehouses', 'id')->where('is_active', 1)],
+            'product_id'         => 'required|exists:products,id',
+            'variant_id'         => 'nullable|exists:product_variants,id',
+            'unit_conversion_id' => 'nullable|exists:unit_conversions,id',
+            'type'               => 'required|in:in,out,adjustment',
+            'quantity'           => 'required|numeric|min:0',
+            'unit_cost'          => 'nullable|numeric|min:0',
+            'counter_account_id' => 'required|exists:account_trees,id',
+            'notes'              => 'nullable|string|max:500',
+        ], [], [
+            'warehouse_id' => 'المستودع', 'product_id' => 'المنتج', 'variant_id' => 'المتغير', 'type' => 'نوع الحركة',
+            'quantity' => 'الكمية', 'unit_cost' => 'تكلفة الوحدة', 'counter_account_id' => 'الحساب المقابل', 'unit_conversion_id' => 'الوحدة',
         ]);
 
-        DB::transaction(function () use ($request) {
-            WarehouseTransaction::record([
-                'warehouse_id' => $request->warehouse_id,
-                'product_id'   => $request->product_id,
-                'variant_id'   => $request->variant_id,
-                'unit_id'      => $request->unit_id,
-                'type'         => $request->type,
-                'quantity'     => $request->quantity,
-                'unit_cost'    => $request->unit_cost ?? 0,
-                'notes'        => $request->notes,
-                'created_by'   => Auth::guard('admin')->id(),
-            ]);
-        });
+        if ($data['type'] !== 'adjustment' && (float) $data['quantity'] <= 0) {
+            return back()->withInput()->withErrors(['quantity' => 'الكمية يجب أن تكون أكبر من صفر']);
+        }
+
+        app(InventoryMovementService::class)->record($data);
 
         return redirect()->route($this->route . '.index')
-            ->with('success', 'تم تسجيل الحركة المخزنية بنجاح.');
+            ->with('message', 'تم تسجيل الحركة المخزنية وترحيل قيدها بنجاح.');
     }
 
     // -------------------------------------------------------
@@ -155,32 +155,28 @@ class WarehouseTransactionsController extends Controller
     }
 
     // -------------------------------------------------------
-    // Delete (reverses the stock effect before removing)
+    // Delete = عكس الحركة اليدوية بحركة وقيد معاكسين (حركات المستندات تُلغى من مستندها)
     // -------------------------------------------------------
     public function destroy(Request $request)
     {
-        $transaction = WarehouseTransaction::findOrFail($request->id);
+        $ids = (array) ($request->ids ?? $request->id ?? []);
 
-        DB::transaction(function () use ($transaction) {
-            $isIn  = in_array($transaction->type, ['in', 'transfer_in'], true);
-            $delta = $isIn ? -$transaction->quantity : $transaction->quantity;
+        try {
+            DB::transaction(function () use ($ids) {
+                foreach (WarehouseTransaction::whereIn('id', $ids)->get() as $transaction) {
+                    app(InventoryMovementService::class)->reverse($transaction);
+                }
+            });
+        } catch (ValidationException $e) {
+            $message = collect($e->errors())->flatten()->first();
+            return $request->expectsJson()
+                ? response()->json(['success' => false, 'message' => $message], 422)
+                : back()->withErrors(['id' => $message]);
+        }
 
-            $inventory = \App\Models\Finance\InventoryItem::where([
-                'warehouse_id' => $transaction->warehouse_id,
-                'product_id'   => $transaction->product_id,
-                'variant_id'   => $transaction->variant_id,
-            ])->first();
-
-            if ($inventory) {
-                $inventory->quantity = max(0, (float) $inventory->quantity + $delta);
-                $inventory->save();
-            }
-
-            $transaction->delete();
-        });
-
-        return redirect()->route($this->route . '.index')
-            ->with('success', 'تم حذف الحركة وعكس أثرها على المخزون بنجاح.');
+        return $request->expectsJson()
+            ? response()->json(['success' => true])
+            : redirect()->route($this->route . '.index')->with('message', 'تم عكس الحركة وأثرها على المخزون والقيد بنجاح.');
     }
 
     // -------------------------------------------------------

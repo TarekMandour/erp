@@ -31,6 +31,7 @@ class Product extends Model implements HasMedia
         'has_variants',
         'average_cost',
         'cost_price',
+        'calories',
     ];
 
     protected $casts = [

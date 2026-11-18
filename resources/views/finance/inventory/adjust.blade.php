@@ -27,6 +27,9 @@
                 <div class="card-title"><h2>تعديل المخزون</h2></div>
             </div>
             <div class="card-body pt-0">
+                @if($errors->any())
+                <div class="alert alert-danger"><ul class="mb-0">@foreach($errors->all() as $e)<li>{{$e}}</li>@endforeach</ul></div>
+                @endif
 
                 {{-- Current Stock Badge (if adjusting existing item) --}}
                 @if($item)
@@ -104,7 +107,7 @@
                     {{-- Quantity --}}
                     <div class="col-md-3 fv-row">
                         <label class="form-label required" id="qty-label">الكمية</label>
-                        <input type="number" step="0.001" min="0.001" class="form-control form-control-solid" name="quantity"
+                        <input type="number" step="0.001" min="0" class="form-control form-control-solid" name="quantity"
                             value="{{old('quantity')}}" placeholder="0.000" />
                         @error('quantity')<div class="text-danger mt-1">{{$message}}</div>@enderror
                     </div>
@@ -114,6 +117,14 @@
                         <label class="form-label">تكلفة الوحدة</label>
                         <input type="number" step="0.01" min="0" class="form-control form-control-solid" name="unit_cost"
                             value="{{old('unit_cost', 0)}}" placeholder="0.00" />
+                        <div class="text-muted fs-7 mt-1">للوارد: صفر = متوسط التكلفة الحالي. الصادر دائماً بمتوسط التكلفة.</div>
+                        @error('unit_cost')<div class="text-danger mt-1">{{$message}}</div>@enderror
+                    </div>
+                </div>
+
+                <div class="row mb-7">
+                    <div class="col-md-6 fv-row">
+                        @include('finance.inventory._counter_account')
                     </div>
                 </div>
 

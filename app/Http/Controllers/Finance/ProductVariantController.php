@@ -203,6 +203,12 @@ class ProductVariantController extends Controller
 
         $result = $this->objectModel::whereId($variantId)->first();
 
+        // متوسط التكلفة يُحسب من حركات المخزون إذا كان للمتغير مخزون أو حركات (QA 2.9)
+        if (\App\Models\Finance\InventoryTransaction::where('variant_id', $variantId)->exists()
+            || \App\Models\Finance\InventoryItem::where('variant_id', $variantId)->where('quantity', '!=', 0)->exists()) {
+            unset($data['average_cost']);
+        }
+
         $result->update($data);
 
         DB::commit();

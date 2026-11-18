@@ -160,6 +160,9 @@ $(function () {
                             } else {
                                 toastr.error("", data.message);
                             }
+                        },
+                        error: function (xhr) {
+                            toastr.error("", (xhr.responseJSON && xhr.responseJSON.message) || "عفوا لم يتم الحذف");
                         }
                     });
                 }

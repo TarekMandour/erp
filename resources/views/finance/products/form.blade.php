@@ -203,7 +203,7 @@
                 <label class="form-label">سعرات حرارية</label>
                 <!--end::Label-->
                 <!--begin::Input-->
-                <input type="text" class="form-control form-control-solid" name="calories" value="{{old('calories',$data->calories ?? '')}}" placeholder="سعرات حرارية"  />
+                <input type="number" step="0.01" min="0" class="form-control form-control-solid" name="calories" value="{{old('calories',$data->calories ?? '')}}" placeholder="سعرات حرارية"  />
                 <!--end::Input-->
             </div>
             <div>
