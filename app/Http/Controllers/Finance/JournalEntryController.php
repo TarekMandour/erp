@@ -11,11 +11,17 @@ use App\Models\Finance\JournalEntryItem;
 use App\Models\Finance\AccountTree;
 use App\Models\Finance\CostCenter;
 use App\Http\Requests\Finance\JournalEntryRequest;
+use App\Services\Finance\ManualJournalService;
+use Illuminate\Support\Facades\DB;
 
 class JournalEntryController extends Controller
 {
     protected $viewPath  = 'finance.journal_entries';
     private $route       = 'finance.journal_entries';
+
+    public function __construct(private ManualJournalService $journal)
+    {
+    }
 
     public function index(Request $request)
     {
@@ -95,77 +101,77 @@ class JournalEntryController extends Controller
 
     public function create()
     {
-        $accounts    = AccountTree::where('is_active', true)->orderBy('code')->get();
+        $accounts    = AccountTree::where('is_active', true)->whereDoesntHave('children')->orderBy('code')->get();
         $costCenters = CostCenter::where('is_active', true)->orderBy('name')->get();
         return view($this->viewPath . '.create', compact('accounts', 'costCenters'));
     }
 
     public function store(JournalEntryRequest $request)
     {
-        $data               = $request->validated();
-        $data['entry_number'] = $this->generateEntryNumber();
-        $data['created_by']   = auth()->guard('admin')->id();
-        $items              = $data['items'];
+        $data  = $request->validated();
+        $items = $data['items'];
         unset($data['items']);
 
-        $entry = JournalEntry::create($data);
-
-        foreach ($items as $item) {
-            $entry->items()->create([
-                'account_tree_id' => $item['account_tree_id'],
-                'debit'           => $item['debit'] ?? 0,
-                'credit'          => $item['credit'] ?? 0,
-                'cost_center_id'  => $item['cost_center_id'] ?? null,
-                'description'     => $item['description'] ?? null,
-                'created_at'      => now(),
-            ]);
+        if ($data['status'] === 'canceled') {
+            return back()->withInput()->withErrors(['status' => 'لا يمكن إنشاء قيد بحالة ملغى']);
         }
 
-        $this->recalculateBalances($entry);
+        $entry = DB::transaction(function () use ($data, $items) {
+            $data['entry_number'] = $this->journal->nextEntryNumber();
+            $data['created_by']   = auth()->guard('admin')->id();
+
+            $entry = JournalEntry::create($data);
+            $this->journal->replaceItems($entry, $items);
+
+            return $entry;
+        });
 
         return redirect()->route($this->route . '.show', $entry->id)
-            ->with('success', 'تم إنشاء القيد بنجاح: ' . $entry->entry_number);
+            ->with('message', 'تم إنشاء القيد بنجاح: ' . $entry->entry_number);
     }
 
     public function edit($id)
     {
         $data        = JournalEntry::with('items')->findOrFail($id);
-        $accounts    = AccountTree::where('is_active', true)->orderBy('code')->get();
+        $accounts    = AccountTree::where('is_active', true)->whereDoesntHave('children')->orderBy('code')->get();
         $costCenters = CostCenter::where('is_active', true)->orderBy('name')->get();
         return view($this->viewPath . '.edit', compact('data', 'accounts', 'costCenters'));
     }
 
     public function update(JournalEntryRequest $request)
     {
-        $entry         = JournalEntry::findOrFail($request->id);
-        $oldAccountIds = $entry->items()->pluck('account_tree_id')->toArray();
+        $entry = JournalEntry::findOrFail($request->id);
+
+        if ($error = $this->lockedReason($entry)) {
+            return back()->withInput()->withErrors(['status' => $error]);
+        }
 
         $data  = $request->validated();
         $items = $data['items'];
         unset($data['items']);
 
-        $entry->update($data);
-        $entry->items()->each(fn($item) => $item->delete());
+        // إلغاء قيد مرحّل = قيد عكسي، وبنود الأصل لا تتغير
+        if ($data['status'] === 'canceled') {
+            if ($entry->status !== 'posted') {
+                return back()->withInput()->withErrors(['status' => 'المسودة تُحذف ولا تُلغى']);
+            }
+            $reverse = $this->journal->cancel($entry);
 
-        foreach ($items as $item) {
-            $entry->items()->create([
-                'account_tree_id' => $item['account_tree_id'],
-                'debit'           => $item['debit'] ?? 0,
-                'credit'          => $item['credit'] ?? 0,
-                'cost_center_id'  => $item['cost_center_id'] ?? null,
-                'description'     => $item['description'] ?? null,
-                'created_at'      => now(),
-            ]);
+            return redirect()->route($this->route . '.show', $entry->id)
+                ->with('message', 'تم إلغاء القيد بالقيد العكسي ' . $reverse->entry_number);
         }
 
-        $newAccountIds = $entry->items()->pluck('account_tree_id')->toArray();
-        $allAccountIds = array_unique(array_merge($oldAccountIds, $newAccountIds));
-        foreach ($allAccountIds as $accountId) {
-            $this->updateAccountBalance($accountId);
+        if ($entry->status === 'posted' && $data['status'] === 'draft') {
+            return back()->withInput()->withErrors(['status' => 'لا يمكن إرجاع قيد مرحّل إلى مسودة، ألغِه بدلاً من ذلك']);
         }
+
+        DB::transaction(function () use ($entry, $data, $items) {
+            $entry->update($data);
+            $this->journal->replaceItems($entry, $items);
+        });
 
         return redirect()->route($this->route . '.show', $entry->id)
-            ->with('success', 'تم تحديث القيد بنجاح');
+            ->with('message', 'تم تحديث القيد بنجاح');
     }
 
     public function show($id)
@@ -174,14 +180,24 @@ class JournalEntryController extends Controller
         return view($this->viewPath . '.show', compact('data'));
     }
 
+    /**
+     * الحذف للمسودات فقط؛ القيد المرحّل يُلغى بقيد عكسي من شاشة التعديل
+     */
     public function destroy(Request $request)
-{
-    $entries = JournalEntry::with('items')->whereIn('id', $request->ids)->get();
+    {
+        $ids     = (array) ($request->ids ?? $request->id ?? []);
+        $entries = JournalEntry::whereIn('id', $ids)->get();
 
         foreach ($entries as $entry) {
-            $entry->items()->each(fn($item) => $item->delete());
-            $entry->delete();
+            if ($entry->reference_type) {
+                return response()->json(['success' => false, 'message' => "القيد {$entry->entry_number} ناتج عن مستند، احذفه من المستند نفسه"], 422);
+            }
+            if ($entry->status !== 'draft') {
+                return response()->json(['success' => false, 'message' => "لا يمكن حذف القيد {$entry->entry_number} لأنه " . $entry->status_label . '؛ ألغِ القيد المرحّل بدلاً من حذفه'], 422);
+            }
         }
+
+        DB::transaction(fn () => $entries->each(fn ($entry) => $this->journal->deleteDraft($entry)));
 
         return response()->json(['success' => true]);
     }
@@ -200,44 +216,18 @@ class JournalEntryController extends Controller
         return (new FastExcel($data->orderBy('date', 'desc')->get()))->download('journal_entries.csv');
     }
 
-    private function recalculateBalances(JournalEntry $entry): void
+    /**
+     * سبب منع التعديل: القيود الناتجة عن مستند تُعدَّل من مستندها، والملغاة لا تُعدَّل
+     */
+    private function lockedReason(JournalEntry $entry): ?string
     {
-        $accountIds = $entry->items()->pluck('account_tree_id')->unique()->toArray();
-        foreach ($accountIds as $accountId) {
-            $this->updateAccountBalance($accountId);
+        if ($entry->reference_type) {
+            return 'هذا القيد ناتج عن مستند (' . class_basename($entry->reference_type) . ' #' . $entry->reference_id . ')، عدّله من المستند نفسه';
         }
-    }
+        if ($entry->status === 'canceled') {
+            return 'لا يمكن تعديل قيد ملغى';
+        }
 
-    private function updateAccountBalance(int $accountId): void
-    {
-        $account = AccountTree::find($accountId);
-        if (!$account) return;
-
-        $totals = JournalEntryItem::where('account_tree_id', $accountId)
-            ->selectRaw('SUM(debit) as total_debit, SUM(credit) as total_credit')
-            ->first();
-
-        $totalDebit  = $totals->total_debit  ?? 0;
-        $totalCredit = $totals->total_credit ?? 0;
-
-        $account->update([
-            'total_debit'  => $totalDebit,
-            'total_credit' => $totalCredit,
-            'balance'      => $totalDebit - $totalCredit,
-        ]);
-    }
-
-    private function generateEntryNumber(): string
-    {
-        $year   = now()->year;
-        $prefix = 'JE-' . $year . '-';
-
-        $last = JournalEntry::where('entry_number', 'LIKE', $prefix . '%')
-            ->orderByRaw('CAST(SUBSTRING(entry_number, ' . (strlen($prefix) + 1) . ') AS UNSIGNED) DESC')
-            ->value('entry_number');
-
-        $sequence = $last ? (int) substr($last, strlen($prefix)) + 1 : 1;
-
-        return $prefix . str_pad($sequence, 4, '0', STR_PAD_LEFT);
+        return null;
     }
 }

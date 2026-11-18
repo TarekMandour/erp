@@ -33,4 +33,7 @@
 				};
 				toastr.success("{{session()->get("message")}}");
 			@endif
+			@if(session('warning'))
+				Swal.fire({ icon: 'warning', title: 'تنبيه', text: @json(session('warning')), confirmButtonText: 'موافق' });
+			@endif
 		</script>

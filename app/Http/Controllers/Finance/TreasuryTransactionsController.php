@@ -4,6 +4,9 @@ namespace App\Http\Controllers\Finance;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
+use App\Services\Finance\CashMovementService;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Yajra\DataTables\Facades\DataTables;
 use Rap2hpoutre\FastExcel\FastExcel;
 use App\Models\Finance\TreasuryTransaction;
@@ -14,6 +17,10 @@ class TreasuryTransactionsController extends Controller
 {
     protected $viewPath  = 'finance.treasury_transactions';
     private $route       = 'finance.treasury_transactions';
+    public function __construct(private CashMovementService $cash)
+    {
+    }
+
     private $objectModel = TreasuryTransaction::class;
 
     public function index(Request $request)
@@ -78,33 +85,38 @@ class TreasuryTransactionsController extends Controller
     {
         $data       = new TreasuryTransaction();
         $treasuries = Treasury::where('is_active', true)->orderBy('name')->get();
-        return view($this->viewPath . '.create', compact('data', 'treasuries'));
+        $counterAccounts = app(\App\Services\Finance\ManualJournalService::class)->counterAccounts();
+        return view($this->viewPath . '.create', compact('counterAccounts', 'data', 'treasuries'));
     }
 
     public function store(TreasuryTransactionRequest $request)
     {
-        $row = $this->objectModel::create($request->validated());
-        $this->updateTreasuryBalance($row->treasury_id);
-        return redirect()->route($this->route . '.index')->with('success', 'تم إضافة الحركة بنجاح');
+        $data   = $request->validated();
+        $holder = Treasury::findOrFail($data['treasury_id']);
+
+        $this->cash->create($holder, $data['type'], (float) $data['amount'], (int) $data['counter_account_id'], $data['description'] ?? null);
+
+        return redirect()->route($this->route . '.index')->with('message', 'تم إضافة الحركة وترحيل قيدها بنجاح');
     }
 
     public function edit($id)
     {
         $data       = $this->objectModel::findOrFail($id);
         $treasuries = Treasury::where('is_active', true)->orderBy('name')->get();
-        return view($this->viewPath . '.edit', compact('data', 'treasuries'));
+        $counterAccounts = app(\App\Services\Finance\ManualJournalService::class)->counterAccounts();
+        $data->counter_account_id = $this->cash->counterAccountId($data);
+        return view($this->viewPath . '.edit', compact('counterAccounts', 'data', 'treasuries'));
     }
 
     public function update(TreasuryTransactionRequest $request)
     {
-        $row           = $this->objectModel::findOrFail($request->id);
-        $oldTreasuryId = $row->treasury_id;
-        $row->update($request->validated());
-        $this->updateTreasuryBalance($oldTreasuryId);
-        if ($row->treasury_id !== $oldTreasuryId) {
-            $this->updateTreasuryBalance($row->treasury_id);
-        }
-        return redirect()->route($this->route . '.index')->with('success', 'تم تحديث الحركة بنجاح');
+        $row    = $this->objectModel::findOrFail($request->id);
+        $data   = $request->validated();
+        $holder = Treasury::findOrFail($data['treasury_id']);
+
+        $this->cash->update($row, $holder, $data['type'], (float) $data['amount'], (int) $data['counter_account_id'], $data['description'] ?? null);
+
+        return redirect()->route($this->route . '.index')->with('message', 'تم تحديث الحركة وقيدها بنجاح');
     }
 
     public function show($id)
@@ -113,14 +125,20 @@ class TreasuryTransactionsController extends Controller
         return view($this->viewPath . '.show', compact('data'));
     }
 
+    /**
+     * حذف الحركة اليدوية = إلغاء قيدها بقيد عكسي؛ حركات المستندات تُحذف من مستندها
+     */
     public function destroy(Request $request)
     {
-        $rows        = $this->objectModel::whereIn('id', $request->ids)->get();
-        $treasuryIds = $rows->pluck('treasury_id')->unique();
-        $this->objectModel::whereIn('id', $request->ids)->delete();
-        foreach ($treasuryIds as $treasuryId) {
-            $this->updateTreasuryBalance($treasuryId);
+        $ids  = (array) ($request->ids ?? $request->id ?? []);
+        $rows = $this->objectModel::whereIn('id', $ids)->get();
+
+        try {
+            DB::transaction(fn () => $rows->each(fn ($row) => $this->cash->delete($row)));
+        } catch (ValidationException $e) {
+            return response()->json(['success' => false, 'message' => collect($e->errors())->flatten()->first()], 422);
         }
+
         return response()->json(['success' => true]);
     }
 
@@ -136,14 +154,4 @@ class TreasuryTransactionsController extends Controller
         return (new FastExcel($data->orderBy('created_at', 'desc')->get()))->download('treasury_transactions.csv');
     }
 
-    private function updateTreasuryBalance(int $treasuryId): void
-    {
-        $treasury = Treasury::find($treasuryId);
-        if (!$treasury) return;
-
-        $deposits  = TreasuryTransaction::where('treasury_id', $treasuryId)->where('type', 'deposit')->sum('amount');
-        $withdraws = TreasuryTransaction::where('treasury_id', $treasuryId)->where('type', 'withdraw')->sum('amount');
-
-        $treasury->update(['balance' => $deposits - $withdraws]);
-    }
 }

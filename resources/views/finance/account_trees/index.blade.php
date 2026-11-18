@@ -215,7 +215,8 @@ $(function () {
                         data: {ids: checkIDs, _token: token},
                         success: function (data) {
                             table.ajax.reload();
-                        }
+                        },
+                        error: function (xhr) { Swal.fire({ icon: "error", title: "تعذّر الحذف", text: (xhr.responseJSON && xhr.responseJSON.message) || "حدث خطأ", confirmButtonText: "موافق" }); }
                     });
                 }
             });

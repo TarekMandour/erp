@@ -69,6 +69,34 @@ class SafeFormulaEvaluator
     }
 
     /**
+     * فحص المعادلة عند الحفظ: متغيرات معروفة فقط + أرقام وعمليات حسابية، وتحليل ناجح
+     */
+    public function isValidFormula(string $formula, array $extraVariables = []): bool
+    {
+        $names = array_merge(
+            ['total_amount', 'total', 'subtotal', 'tax', 'discount', 'coupon_discount', 'offer_discount', 'shipping', 'paid'],
+            array_filter($extraVariables)
+        );
+
+        $expression = $formula;
+        foreach ($names as $name) {
+            $expression = str_replace('{{' . $name . '}}', '1', $expression);
+            $expression = preg_replace('/\b' . preg_quote($name, '/') . '\b/', '1', $expression);
+        }
+
+        if (trim($expression) === '') {
+            return false;
+        }
+
+        try {
+            $this->safeEvaluate($expression);
+            return true;
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    /**
      * حاسبة رياضية آمنة تدعم: + - * / ( ) والأعداد العشرية
      * لا تستخدم eval() – تحلل التعبير يدوياً
      *

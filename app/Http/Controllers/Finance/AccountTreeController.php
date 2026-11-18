@@ -73,8 +73,11 @@ class AccountTreeController extends Controller
                          . ($labels[$row->type] ?? $row->type) . '</span>';
                 })
                 ->addColumn('balance', function ($row) {
-                    $class = $row->account_type === 'debit' ? 'text-success' : 'text-danger';
-                    return '<strong class="' . $class . '">' . number_format($row->balance, 2) . '</strong>';
+                    // الرصيد المخزّن = مدين − دائن؛ يُعرض حسب طبيعة الحساب (الدائن يظهر موجباً)
+                    $natural = $row->account_type === 'credit' ? -(float) $row->balance : (float) $row->balance;
+                    $class   = $natural < 0 ? 'text-danger' : 'text-success';
+                    $side    = $row->account_type === 'credit' ? 'دائن' : 'مدين';
+                    return '<strong class="' . $class . '">' . number_format($natural, 2) . '</strong> <small class="text-muted">' . $side . '</small>';
                 })
                 ->addColumn('is_active', function ($row) {
                     return $row->is_active
@@ -101,21 +104,12 @@ class AccountTreeController extends Controller
 
     public function store(AccountTreeRequest $request)
     {
-        $data = $request->validated();
-
-        $level = 0;
-        if (!empty($data['parent_id'])) {
-            $parent = $this->objectModel::find($data['parent_id']);
-            $level  = $parent ? $parent->level + 1 : 0;
-        }
-
-        $data['level']     = $level;
-        $data['is_active'] = $request->has('is_active') ? 1 : 0;
+        $data = $this->prepare($request);
 
         $this->objectModel::create($data);
 
         return redirect()->route($this->route . '.index')
-            ->with('success', 'تم إضافة الحساب بنجاح');
+            ->with('message', 'تم إضافة الحساب بنجاح');
     }
 
     public function edit($id)
@@ -130,22 +124,43 @@ class AccountTreeController extends Controller
 
     public function update(AccountTreeRequest $request)
     {
-        $data = $request->validated();
         $row  = $this->objectModel::findOrFail($request->id);
+        $data = $this->prepare($request);
 
-        $level = 0;
-        if (!empty($data['parent_id'])) {
-            $parent = $this->objectModel::find($data['parent_id']);
-            $level  = $parent ? $parent->level + 1 : 0;
-        }
-
-        $data['level']     = $level;
-        $data['is_active'] = $request->has('is_active') ? 1 : 0;
-
-        $row->update($data);
+        DB::transaction(function () use ($row, $data) {
+            $row->update($data);
+            $this->refreshDescendantLevels($row);
+        });
 
         return redirect()->route($this->route . '.index')
-            ->with('success', 'تم تحديث الحساب بنجاح');
+            ->with('message', 'تم تحديث الحساب بنجاح');
+    }
+
+    /**
+     * البيانات المسموح بها فقط (لا أرصدة)، المستوى من الأب، والطبيعة الافتراضية من النوع
+     */
+    private function prepare(AccountTreeRequest $request): array
+    {
+        $data = $request->safe()->only(['name', 'code', 'parent_id', 'account_type', 'type']);
+
+        $parent             = ! empty($data['parent_id']) ? $this->objectModel::find($data['parent_id']) : null;
+        $data['parent_id']  = $parent?->id;
+        $data['level']      = $parent ? $parent->level + 1 : 0;
+        $data['is_active']  = $request->has('is_active') ? 1 : 0;
+
+        if (empty($data['account_type'])) {
+            $data['account_type'] = in_array($data['type'], ['asset', 'expense'], true) ? 'debit' : 'credit';
+        }
+
+        return $data;
+    }
+
+    private function refreshDescendantLevels(AccountTree $account): void
+    {
+        foreach ($account->children()->get() as $child) {
+            $child->update(['level' => $account->level + 1]);
+            $this->refreshDescendantLevels($child);
+        }
     }
 
     public function show($id)
@@ -154,10 +169,35 @@ class AccountTreeController extends Controller
         return view($this->viewPath . '.show', compact('data'));
     }
 
+    /**
+     * لا يُحذف حساب له فروع أو قيود أو مرتبط بخزنة/حساب بنكي/رصيد افتتاحي/قاعدة ترحيل
+     */
     public function destroy(Request $request)
     {
-        $ids = $request->ids;
-        $this->objectModel::whereIn('id', $ids)->delete();
+        $ids      = (array) ($request->ids ?? $request->id ?? []);
+        $accounts = $this->objectModel::whereIn('id', $ids)->get();
+
+        foreach ($accounts as $account) {
+            $reason = match (true) {
+                $account->children()->exists()                                                 => 'له حسابات فرعية (احذف الفروع أولاً)',
+                $account->transactions()->exists()                                             => 'عليه قيود محاسبية',
+                \App\Models\Finance\Treasury::where('account_tree_id', $account->id)->exists()    => 'مربوط بخزنة',
+                \App\Models\Finance\BankAccount::where('account_tree_id', $account->id)->exists() => 'مربوط بحساب بنكي',
+                \App\Models\Finance\OpeningBalance::where('account_id', $account->id)->exists()   => 'له رصيد افتتاحي',
+                \App\Models\Finance\PostingRule::where('debit_account_id', $account->id)->orWhere('credit_account_id', $account->id)->exists() => 'مستخدم في قواعد الترحيل',
+                default => null,
+            };
+
+            if ($reason) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "لا يمكن حذف الحساب {$account->code} - {$account->name} لأنه {$reason}",
+                ], 422);
+            }
+        }
+
+        $this->objectModel::whereIn('id', $accounts->pluck('id'))->delete();
+
         return response()->json(['success' => true]);
     }
 
@@ -183,7 +223,7 @@ class AccountTreeController extends Controller
     public function recalculate()
     {
         
-        foreach ($this->objectModel::whereHas('children')->get() as $account) {
+        foreach ($this->objectModel::whereNull('parent_id')->get() as $account) {
             DB::transaction(function () use ($account) {
 
                 if (!$account instanceof AccountTree) {
@@ -195,46 +235,39 @@ class AccountTreeController extends Controller
         }
 
         return redirect()->route($this->route . '.index')
-            ->with('success', 'تم تحديث الحسابات بنجاح');
+            ->with('message', 'تم تحديث الحسابات بنجاح');
         
     }
 
 
+    /**
+     * الحساب الفرعي من بنود القيود غير المسودة، والأب = مجموع فروعه.
+     * الرصيد المخزّن دائماً مدين − دائن (كما في كل خدمات الترحيل)؛ الطبيعة للعرض فقط.
+     */
     protected function recalculateAccount(AccountTree $account): float
     {
         $children = $account->children()->get();
 
-        // إذا كان الحساب أب
         if ($children->isNotEmpty()) {
-
-            $totalDebit = 0;
+            $totalDebit  = 0;
             $totalCredit = 0;
 
             foreach ($children as $child) {
-
-                // احسب الابن أولاً
                 $this->recalculateAccount($child);
-
-                $totalDebit += (float) $child->total_debit;
+                $child->refresh();
+                $totalDebit  += (float) $child->total_debit;
                 $totalCredit += (float) $child->total_credit;
             }
 
-            $account->total_debit = $totalDebit;
+            $account->total_debit  = $totalDebit;
             $account->total_credit = $totalCredit;
-        }
-
-        // حساب الرصيد حسب طبيعة الحساب
-        if ($account->account_type === 'debit') {
-            $balance = $account->total_debit - $account->total_credit;
+            $account->balance      = $totalDebit - $totalCredit;
+            $account->save();
         } else {
-            $balance = $account->total_credit - $account->total_debit;
+            app(\App\Services\Finance\ManualJournalService::class)->recalculateAccounts([$account->id]);
         }
 
-        $account->balance = $balance;
-
-        $account->save();
-
-        return (float) $balance;
+        return (float) $account->fresh()->balance;
     }
 
 }

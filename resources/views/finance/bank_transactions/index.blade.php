@@ -139,7 +139,8 @@ $(function () {
                     $.ajax({
                         type: "POST", url: "{{ route($route.'.delete') }}",
                         data: {ids: checkIDs, _token: $(event.target).data("token")},
-                        success: function () { table.ajax.reload(); }
+                        success: function () { table.ajax.reload(); },
+                        error: function (xhr) { Swal.fire({ icon: "error", title: "تعذّر الحذف", text: (xhr.responseJSON && xhr.responseJSON.message) || "حدث خطأ", confirmButtonText: "موافق" }); }
                     });
                 }
             });

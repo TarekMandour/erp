@@ -66,7 +66,7 @@ class TreasuriesController extends Controller
     public function create()
     {
         $data = new Treasury();
-        $accounts    = AccountTree::where('is_active', true)->orderBy('code')->get();
+        $accounts    = AccountTree::where('is_active', true)->where('type', 'asset')->whereDoesntHave('children')->orderBy('code')->get();
         return view($this->viewPath . '.create', compact('data', 'accounts'));
     }
 
@@ -81,7 +81,7 @@ class TreasuriesController extends Controller
     public function edit($id)
     {
         $data = $this->objectModel::findOrFail($id);
-        $accounts    = AccountTree::where('is_active', true)->orderBy('code')->get();
+        $accounts    = AccountTree::where('is_active', true)->where('type', 'asset')->whereDoesntHave('children')->orderBy('code')->get();
         return view($this->viewPath . '.edit', compact('data', 'accounts'));
     }
 

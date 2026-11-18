@@ -14,8 +14,24 @@ use Illuminate\Support\Facades\Log;
 class JournalEntryItemObserver
 {
 
+    /**
+     * بنود القيد المسودة أو بنود بمبلغ صفر لا تُنشئ حركات خزنة/بنك (لا أثر لها على الأرصدة)
+     */
+    private function hasNoCashEffect(JournalEntryItem $item): bool
+    {
+        if (round((float) $item->debit - (float) $item->credit, 2) == 0.0) {
+            return true;
+        }
+
+        return $item->entry()->value('status') === 'draft';
+    }
+
     public function created(JournalEntryItem $journalEntryItem): void
     {
+        if ($this->hasNoCashEffect($journalEntryItem)) {
+            return;
+        }
+
         // if ($journalEntryItem->status !== 'approved') {
         //     return;
         // }
@@ -76,8 +92,8 @@ class JournalEntryItemObserver
                 ->where('reference_type', JournalEntryItem::class)
                 ->where('reference_id', $journalEntryItem->id)
                 ->delete();
-                
-            BankTransaction::create([
+
+            if (! $this->hasNoCashEffect($journalEntryItem)) BankTransaction::create([
                 'bank_account_id' => $bankAccount->id,
                 'type'            => $journalEntryItem->debit > 0 ? 'deposit' : 'withdraw',
                 'amount'          => abs($journalEntryItem->debit - $journalEntryItem->credit),
@@ -95,8 +111,8 @@ class JournalEntryItemObserver
                 ->where('reference_type', JournalEntryItem::class)
                 ->where('reference_id', $journalEntryItem->id)
                 ->delete();
-                
-            TreasuryTransaction::create([
+
+            if (! $this->hasNoCashEffect($journalEntryItem)) TreasuryTransaction::create([
                 'treasury_id' => $treasury->id,
                 'type'        => $journalEntryItem->debit > 0 ? 'deposit' : 'withdraw',
                 'amount'      => abs($journalEntryItem->debit - $journalEntryItem->credit),

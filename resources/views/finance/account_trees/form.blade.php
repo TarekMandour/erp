@@ -33,6 +33,7 @@
 
             <label class="form-label"> طبيعة الحساب</label>
             <select class="form-select form-select-solid mb-5" name="account_type">
+                <option value="">تلقائي حسب النوع (الأصول والمصروفات مدين، والباقي دائن)</option>
                 <option value="debit" @if(old('account_type', $data->account_type ?? '') == 'debit') selected @endif>مدين</option>
                 <option value="credit" @if(old('account_type', $data->account_type ?? '') == 'credit') selected @endif>دائن</option>
             </select>

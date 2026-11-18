@@ -9,12 +9,19 @@ use Rap2hpoutre\FastExcel\FastExcel;
 use App\Models\Finance\OpeningBalance;
 use App\Models\Finance\AccountTree;
 use App\Http\Requests\Finance\OpeningBalanceRequest;
+use App\Models\Finance\JournalEntry;
+use App\Services\Finance\ManualJournalService;
+use Illuminate\Support\Facades\DB;
 
 class OpeningBalancesController extends Controller
 {
     protected $viewPath  = 'finance.opening_balances';
     private $route       = 'finance.opening_balances';
     private $objectModel = OpeningBalance::class;
+
+    public function __construct(private ManualJournalService $journal)
+    {
+    }
 
     public function index(Request $request)
     {
@@ -82,27 +89,39 @@ class OpeningBalancesController extends Controller
     public function create()
     {
         $data     = new OpeningBalance();
-        $accounts = AccountTree::where('is_active', true)->orderBy('code')->get();
+        $accounts = AccountTree::where('is_active', true)->whereDoesntHave('children')->orderBy('code')->get();
         return view($this->viewPath . '.create', compact('data', 'accounts'));
     }
 
     public function store(OpeningBalanceRequest $request)
     {
-        $this->objectModel::create($request->validated());
-        return redirect()->route($this->route . '.index')->with('success', 'تم إضافة الرصيد الافتتاحي بنجاح');
+        $warning = DB::transaction(function () use ($request) {
+            $this->objectModel::create($request->validated());
+            return $this->syncOpeningEntry();
+        });
+
+        return redirect()->route($this->route . '.index')
+            ->with('message', 'تم إضافة الرصيد الافتتاحي بنجاح')
+            ->with('warning', $warning);
     }
 
     public function edit($id)
     {
         $data     = $this->objectModel::findOrFail($id);
-        $accounts = AccountTree::where('is_active', true)->orderBy('code')->get();
+        $accounts = AccountTree::where('is_active', true)->whereDoesntHave('children')->orderBy('code')->get();
         return view($this->viewPath . '.edit', compact('data', 'accounts'));
     }
 
     public function update(OpeningBalanceRequest $request)
     {
-        $this->objectModel::findOrFail($request->id)->update($request->validated());
-        return redirect()->route($this->route . '.index')->with('success', 'تم تحديث الرصيد الافتتاحي بنجاح');
+        $warning = DB::transaction(function () use ($request) {
+            $this->objectModel::findOrFail($request->id)->update($request->validated());
+            return $this->syncOpeningEntry();
+        });
+
+        return redirect()->route($this->route . '.index')
+            ->with('message', 'تم تحديث الرصيد الافتتاحي بنجاح')
+            ->with('warning', $warning);
     }
 
     public function show($id)
@@ -113,8 +132,14 @@ class OpeningBalancesController extends Controller
 
     public function destroy(Request $request)
     {
-        $this->objectModel::whereIn('id', $request->ids)->delete();
-        return response()->json(['success' => true]);
+        $ids = (array) ($request->ids ?? $request->id ?? []);
+
+        $warning = DB::transaction(function () use ($ids) {
+            $this->objectModel::whereIn('id', $ids)->delete();
+            return $this->syncOpeningEntry();
+        });
+
+        return response()->json(['success' => true, 'warning' => $warning]);
     }
 
     public function export(Request $request)
@@ -132,5 +157,57 @@ class OpeningBalancesController extends Controller
         }
 
         return (new FastExcel($query->orderBy('date', 'desc')->get()))->download('opening_balances.csv');
+    }
+
+    /**
+     * قيد افتتاحي واحد يُعاد توليده من كل سطور الأرصدة الافتتاحية.
+     * مرحّل إذا توازنت السطور، وإلا مسودة بلا أثر على الأرصدة مع تنبيه بالفارق.
+     *
+     * @return string|null رسالة التنبيه إن لم تتوازن السطور
+     */
+    private function syncOpeningEntry(): ?string
+    {
+        $rows  = $this->objectModel::orderBy('id')->get();
+        $entry = JournalEntry::where('reference_type', OpeningBalance::class)->lockForUpdate()->first();
+
+        if ($rows->isEmpty()) {
+            if ($entry) {
+                $this->journal->deleteDraft($entry);
+            }
+            return null;
+        }
+
+        $debit    = round((float) $rows->sum('debit'), 2);
+        $credit   = round((float) $rows->sum('credit'), 2);
+        $balanced = $debit === $credit;
+
+        $header = [
+            'entry_type'     => 'opening_balance',
+            'date'           => $rows->min('date')->toDateString(),
+            'description'    => 'قيد الأرصدة الافتتاحية (يُولَّد تلقائياً من شاشة الأرصدة الافتتاحية)',
+            'reference_type' => OpeningBalance::class,
+            'reference_id'   => null,
+            'status'         => $balanced ? 'posted' : 'draft',
+        ];
+
+        if ($entry) {
+            $entry->update($header);
+        } else {
+            $entry = JournalEntry::create($header + [
+                'entry_number' => $this->journal->nextEntryNumber(),
+                'created_by'   => auth()->guard('admin')->id(),
+            ]);
+        }
+
+        $this->journal->replaceItems($entry, $rows->map(fn ($row) => [
+            'account_tree_id' => $row->account_id,
+            'debit'           => $row->debit,
+            'credit'          => $row->credit,
+            'description'     => $row->description,
+        ])->all());
+
+        return $balanced ? null : 'الأرصدة الافتتاحية غير متوازنة: المدين ' . number_format($debit, 2)
+            . ' والدائن ' . number_format($credit, 2) . ' (الفرق ' . number_format(abs($debit - $credit), 2)
+            . '). القيد الافتتاحي ' . $entry->entry_number . ' محفوظ كمسودة ولن يؤثر في الأرصدة حتى تتوازن.';
     }
 }

@@ -2,7 +2,9 @@
 
 namespace App\Http\Requests\Finance;
 
+use App\Services\Finance\ManualJournalService;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\ValidationException;
 
 class JournalEntryRequest extends FormRequest
 {
@@ -27,6 +29,32 @@ class JournalEntryRequest extends FormRequest
             'items.*.cost_center_id'         => 'nullable|exists:cost_centers,id',
             'items.*.description'            => 'nullable|string',
         ];
+    }
+
+    /**
+     * سطور القيد: مدين XOR دائن > 0، حساب فرعي نشط غير مكرر، والتوازن عند الترحيل.
+     * عند الإلغاء (canceled) لا تُفحص السطور لأن بنود القيد الأصلي لا تتغير.
+     */
+    public function withValidator($validator): void
+    {
+        $validator->after(function ($validator) {
+            if ($validator->errors()->isNotEmpty() || $this->input('status') === 'canceled') {
+                return;
+            }
+
+            try {
+                app(ManualJournalService::class)->validateLines(
+                    array_values((array) $this->input('items', [])),
+                    $this->input('status') === 'posted'
+                );
+            } catch (ValidationException $e) {
+                foreach ($e->errors() as $key => $messages) {
+                    foreach ($messages as $message) {
+                        $validator->errors()->add($key, $message);
+                    }
+                }
+            }
+        });
     }
 
     public function messages(): array

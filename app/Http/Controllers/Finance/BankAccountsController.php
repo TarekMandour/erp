@@ -64,7 +64,7 @@ class BankAccountsController extends Controller
     public function create()
     {
         $banks = Bank::orderBy('name')->get();
-        $accounts    = AccountTree::where('is_active', true)->orderBy('code')->get();
+        $accounts    = AccountTree::where('is_active', true)->where('type', 'asset')->whereDoesntHave('children')->orderBy('code')->get();
         return view($this->viewPath . '.create', compact('banks', 'accounts'));
     }
 
@@ -78,7 +78,7 @@ class BankAccountsController extends Controller
     {
         $data  = $this->objectModel::findOrFail($id);
         $banks = Bank::orderBy('name')->get();
-        $accounts    = AccountTree::where('is_active', true)->orderBy('code')->get();
+        $accounts    = AccountTree::where('is_active', true)->where('type', 'asset')->whereDoesntHave('children')->orderBy('code')->get();
         return view($this->viewPath . '.edit', compact('data', 'banks', 'accounts'));
     }
 

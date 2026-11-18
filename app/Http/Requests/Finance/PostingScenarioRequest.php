@@ -24,11 +24,11 @@ class PostingScenarioRequest extends FormRequest
             'priority'       => ['nullable', 'integer'],
             'description'    => ['nullable', 'string'],
 
-            'rules'                          => ['nullable', 'array'],
+            'rules'                          => ['required', 'array', 'min:1'],
             'rules.*.rule_group'             => ['required', 'integer', 'min:1'],
             'rules.*.debit_account_id'       => ['nullable', 'exists:account_trees,id'],
             'rules.*.credit_account_id'      => ['nullable', 'exists:account_trees,id'],
-            'rules.*.amount_type'            => ['required', Rule::in(['fixed', 'subtotal', 'tax', 'total', 'quantity_cost', 'percentage', 'formula'])],
+            'rules.*.amount_type'            => ['required', Rule::in(['fixed', 'subtotal', 'tax', 'total', 'quantity_cost', 'percentage', 'formula', 'field'])],
             'rules.*.amount_value'           => ['nullable', 'numeric', 'min:0'],
             'rules.*.amount_field'           => ['nullable', 'string', 'max:100'],
             'rules.*.formula'                => ['nullable', 'string'],
@@ -42,6 +42,68 @@ class PostingScenarioRequest extends FormRequest
             'rules.*.variables.*.variable_name'  => ['required', 'string', 'max:100'],
             'rules.*.variables.*.source_type'    => ['required', Rule::in(['field','function','subquery'])],
             'rules.*.variables.*.source_value'   => ['required', 'string', 'max:255'],
+        ];
+    }
+
+    /**
+     * منطق القواعد: جانب واحد لكل قاعدة، نسبة ≤ 100، مبلغ ثابت > 0، صيغة آمنة،
+     * وكل مجموعة قواعد فيها مدين ودائن (والقواعد الثابتة بالكامل متوازنة).
+     */
+    public function withValidator($validator): void
+    {
+        $validator->after(function ($validator) {
+            if ($validator->errors()->isNotEmpty()) {
+                return;
+            }
+
+            $evaluator = app(\App\Services\Finance\TransactionsService\SafeFormulaEvaluator::class);
+            $groups    = [];
+
+            foreach (array_values((array) $this->input('rules', [])) as $i => $rule) {
+                $n      = $i + 1;
+                $debit  = ! empty($rule['debit_account_id']);
+                $credit = ! empty($rule['credit_account_id']);
+                $type   = $rule['amount_type'] ?? null;
+                $value  = (float) ($rule['amount_value'] ?? 0);
+
+                if ($debit === $credit) {
+                    $validator->errors()->add("rules.{$i}", "القاعدة {$n}: اختر حساباً مديناً أو دائناً فقط (حساب واحد لكل قاعدة)");
+                }
+                if ($type === 'percentage' && ($value <= 0 || $value > 100)) {
+                    $validator->errors()->add("rules.{$i}.amount_value", "القاعدة {$n}: النسبة يجب أن تكون بين 0 و 100");
+                }
+                if ($type === 'fixed' && $value <= 0) {
+                    $validator->errors()->add("rules.{$i}.amount_value", "القاعدة {$n}: المبلغ الثابت يجب أن يكون أكبر من صفر");
+                }
+                if ($type === 'formula') {
+                    $vars = array_column((array) ($rule['variables'] ?? []), 'variable_name');
+                    if (empty($rule['formula']) || ! $evaluator->isValidFormula($rule['formula'], $vars)) {
+                        $validator->errors()->add("rules.{$i}.formula", "القاعدة {$n}: الصيغة غير صالحة. المسموح: أرقام و + - * / ( ) والمتغيرات total, subtotal, tax, discount, paid, shipping ...");
+                    }
+                }
+
+                $g = (int) ($rule['rule_group'] ?? 1);
+                $groups[$g]['debit']  = ($groups[$g]['debit'] ?? false) || $debit;
+                $groups[$g]['credit'] = ($groups[$g]['credit'] ?? false) || $credit;
+                $groups[$g]['all_fixed'] = ($groups[$g]['all_fixed'] ?? true) && $type === 'fixed';
+                $groups[$g]['fixed'] = ($groups[$g]['fixed'] ?? 0) + ($debit && ! $credit ? $value : 0) - ($credit && ! $debit ? $value : 0);
+            }
+
+            foreach ($groups as $g => $info) {
+                if (! $info['debit'] || ! $info['credit']) {
+                    $validator->errors()->add('rules', "مجموعة القواعد {$g}: يجب أن تحتوي على قاعدة مدينة وقاعدة دائنة على الأقل (وإلا ينتج قيد غير متوازن)");
+                } elseif ($info['all_fixed'] && round($info['fixed'], 2) != 0.0) {
+                    $validator->errors()->add('rules', "مجموعة القواعد {$g}: مجموع المبالغ الثابتة المدينة لا يساوي الدائنة");
+                }
+            }
+        });
+    }
+
+    public function messages(): array
+    {
+        return [
+            'rules.required' => 'يجب إضافة قاعدة ترحيل واحدة على الأقل',
+            'rules.min'      => 'يجب إضافة قاعدة ترحيل واحدة على الأقل',
         ];
     }
 

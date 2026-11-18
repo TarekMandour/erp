@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Finance;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Cache;
 use Yajra\DataTables\Facades\DataTables;
 use Rap2hpoutre\FastExcel\FastExcel;
@@ -92,6 +93,7 @@ class PostingScenarioController extends Controller
         $rules            = $data['rules'] ?? [];
         unset($data['rules']);
 
+        $scenario = DB::transaction(function () use ($data, $rules) {
         $scenario = PostingScenario::create($data);
 
         foreach ($rules as $rule) {
@@ -107,8 +109,11 @@ class PostingScenarioController extends Controller
             }
         }
 
+        return $scenario;
+        });
+
         return redirect()->route($this->route . '.show', $scenario->id)
-            ->with('success', 'تم إنشاء السيناريو بنجاح: ' . $scenario->code);
+            ->with('message', 'تم إنشاء السيناريو بنجاح: ' . $scenario->code);
     }
 
     public function edit($id)
@@ -135,6 +140,7 @@ class PostingScenarioController extends Controller
 
         Cache::forget("posting_scenario:{$scenario->code}");
 
+        DB::transaction(function () use ($scenario, $data, $rules) {
         $scenario->update($data);
         $scenario->rules()->delete();
 
@@ -151,10 +157,12 @@ class PostingScenarioController extends Controller
                 $newRule->variables()->create($variable);
             }
         }
+        });
 
-        
+        Cache::forget("posting_scenario:{$scenario->code}");
+
         return redirect()->route($this->route . '.show', $scenario->id)
-            ->with('success', 'تم تحديث السيناريو بنجاح');
+            ->with('message', 'تم تحديث السيناريو بنجاح');
     }
 
     public function show($id)

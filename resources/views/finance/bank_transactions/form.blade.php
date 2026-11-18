@@ -5,6 +5,9 @@
             <div class="card-title"><h2>بيانات المعاملة البنكية</h2></div>
         </div>
         <div class="card-body pt-0">
+            @if($errors->any())
+            <div class="alert alert-danger"><ul class="mb-0">@foreach($errors->all() as $e)<li>{{$e}}</li>@endforeach</ul></div>
+            @endif
 
             <div class="row mb-7">
                 <div class="col-md-6 fv-row">
@@ -37,17 +40,25 @@
                         value="{{old('amount', $data->amount ?? '')}}" placeholder="0.00" />
                     @error('amount')<div class="text-danger mt-1">{{$message}}</div>@enderror
                 </div>
-                <div class="col-md-4 fv-row">
-                    <label class="form-label">نوع المرجع</label>
-                    <input type="text" class="form-control form-control-solid" name="reference_type"
-                        value="{{old('reference_type', $data->reference_type ?? '')}}" placeholder="مثال: invoice" />
-                    @error('reference_type')<div class="text-danger mt-1">{{$message}}</div>@enderror
+                <div class="col-md-8 fv-row">
+                    <label class="form-label">البيان</label>
+                    <input type="text" class="form-control form-control-solid" name="description"
+                        value="{{old('description', $data->description ?? '')}}" placeholder="وصف الحركة (يظهر في القيد)" />
+                    @error('description')<div class="text-danger mt-1">{{$message}}</div>@enderror
                 </div>
-                <div class="col-md-4 fv-row">
-                    <label class="form-label">رقم المرجع</label>
-                    <input type="text" class="form-control form-control-solid" name="reference_id"
-                        value="{{old('reference_id', $data->reference_id ?? '')}}" placeholder="رقم المستند" />
-                    @error('reference_id')<div class="text-danger mt-1">{{$message}}</div>@enderror
+            </div>
+
+            <div class="row mb-7">
+                <div class="col-md-6 fv-row">
+                    <label class="form-label required">الحساب المقابل</label>
+                    <select class="form-select form-select-solid" name="counter_account_id" data-control="select2" data-placeholder="اختر الحساب المقابل">
+                        <option value="">-- اختر الحساب المقابل --</option>
+                        @foreach($counterAccounts as $acc)
+                            <option value="{{$acc->id}}" {{old('counter_account_id', $data->counter_account_id ?? '') == $acc->id ? 'selected' : ''}}>{{$acc->code}} - {{$acc->name}}</option>
+                        @endforeach
+                    </select>
+                    <div class="text-muted fs-7 mt-1">الإيداع: مدين الخزنة/البنك ودائن هذا الحساب، والسحب بالعكس. يُنشأ قيد يومية مرحّل تلقائياً.</div>
+                    @error('counter_account_id')<div class="text-danger mt-1">{{$message}}</div>@enderror
                 </div>
             </div>
 
