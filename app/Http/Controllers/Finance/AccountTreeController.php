@@ -147,6 +147,8 @@ class AccountTreeController extends Controller
         $data['parent_id']  = $parent?->id;
         $data['level']      = $parent ? $parent->level + 1 : 0;
         $data['is_active']  = $request->has('is_active') ? 1 : 0;
+        // QA 7.2 (قرار 2): حساب نقدية يصلح للربط بخزنة — للأصول فقط
+        $data['is_cash']    = $request->has('is_cash') && ($data['type'] ?? null) === 'asset' ? 1 : 0;
 
         if (empty($data['account_type'])) {
             $data['account_type'] = in_array($data['type'], ['asset', 'expense'], true) ? 'debit' : 'credit';

@@ -174,6 +174,9 @@ class InventoryMovementService
             || ($uc->variant_id && (int) $uc->variant_id !== (int) $variantId)) {
             throw ValidationException::withMessages(['unit_conversion_id' => 'وحدة التحويل لا تخص هذا المنتج']);
         }
+        if (! $uc->touchesStockUnit($product->unit_id)) {
+            throw ValidationException::withMessages(['unit_conversion_id' => 'وحدة التحويل يجب أن ترتبط مباشرة بوحدة المنتج الأساسية (وحدة المخزون)']);
+        }
 
         $rate = (float) $uc->conversion_rate;
 

@@ -45,6 +45,14 @@
                 <label class="form-check-label fw-semibold" for="is_active">نشط</label>
             </div>
 
+            {{-- QA 7.2: حساب نقدية (صندوق) يمكن ربطه بخزنة --}}
+            <div class="form-check form-switch mb-5">
+                <input class="form-check-input" type="checkbox" name="is_cash" id="is_cash"
+                    @if(old('is_cash', $data->is_cash ?? false)) checked @endif />
+                <label class="form-check-label fw-semibold" for="is_cash">حساب نقدية (يُربط بخزنة)</label>
+                <div class="text-muted fs-8">لحسابات الأصول فقط، مثل الصندوق والعهد النقدية.</div>
+            </div>
+
         </div>
     </div>
 </div>

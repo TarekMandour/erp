@@ -7,6 +7,7 @@ use App\Models\Finance\JournalEntry;
 use App\Models\Finance\PostingRule;
 use App\Models\Finance\Voucher;
 use App\Models\Finance\Purchase;
+use App\Models\Finance\Order;
 use App\Models\Finance\BankAccount;
 use App\Models\Finance\Treasury;
 use Illuminate\Database\Eloquent\Model;
@@ -104,6 +105,8 @@ class PostingRuleEngine
             'percentage'    => $baseAmount * ((float) ($rule->amount_value ?? 0) / 100),
             'quantity_cost' => $this->calculateQuantityCost($sourceModel),
             'formula'       => $this->formulaEvaluator->evaluateFormula($rule->formula, $sourceModel),
+            // QA 6: «قيمة حقل» — اسم الحقل في المعادلة أو في amount_field
+            'field'         => $this->getFieldValue($sourceModel, $rule->amount_field ?: ($rule->formula ?: 'total_amount')),
             default         => $baseAmount,
         };
     }
@@ -178,6 +181,24 @@ class PostingRuleEngine
             $sourceModel instanceof Purchase
             && $sourceModel->bank_account_id
             && $rule->credit_account_id
+            && $rule->amount_field === 'paid'
+        ) {
+            $bankTreeId = BankAccount::whereKey($sourceModel->bank_account_id)->value('account_tree_id');
+
+            if ($bankTreeId) {
+                return (int) $bankTreeId;
+            }
+        }
+
+        /*
+         * QA 6: طلب بيع بنوع دفع بنكي/محفظة مع اختيار حساب بنكي:
+         * بند "المدفوع" المدين يُرحَّل على حساب الشجرة المرتبط بالحساب البنكي
+         * حتى يظهر في سجل حركات البنك.
+         */
+        if (
+            $sourceModel instanceof Order
+            && $sourceModel->bank_account_id
+            && $rule->debit_account_id
             && $rule->amount_field === 'paid'
         ) {
             $bankTreeId = BankAccount::whereKey($sourceModel->bank_account_id)->value('account_tree_id');

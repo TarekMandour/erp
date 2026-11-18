@@ -117,7 +117,8 @@ class Offer extends Model
 
     public function isExpired(): bool
     {
-        return $this->end_date < now()->toDateString();
+        // QA 6: ينتهي بعد نهاية يوم الانتهاء (المقارنة بالتاريخ لا بالوقت)
+        return $this->end_date && $this->end_date->toDateString() < now()->toDateString();
     }
 
     public function isMaxedOut(): bool

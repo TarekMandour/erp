@@ -190,7 +190,7 @@
                                                 data-conversion-rate="{{ $i->unitConversion->conversion_rate }}"
                                                 data-allow-fractions="{{ $i->unitConversion->allow_fractions ? 'true' : 'false' }}"
                                                 data-decimal-places="{{ $i->unitConversion->decimal_places }}">
-                                            {{ $i->unitConversion->target_unit }} (× {{ $i->unitConversion->conversion_rate }} {{ $i->unitConversion->base_unit }})
+                                            {{ $i->unitConversion->labelFor(\App\Models\Finance\Product::whereKey($i->product_id)->value('unit_id')) }}
                                         </option>
                                     @endif
                                 </select>

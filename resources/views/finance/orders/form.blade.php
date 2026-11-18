@@ -14,6 +14,12 @@
     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
 </div>
 @endif
+@if(session('error'))
+<div class="alert alert-danger alert-dismissible fade show mb-5">
+    {{session('error')}}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+@endif
 
 {{-- ── Header card ────────────────────────────────────── --}}
 <div class="card card-flush py-4 mb-7">
@@ -82,6 +88,20 @@
                     @endforeach
                 </select>
                 @error('payment_type')<div class="text-danger fs-7 mt-1">{{$message}}</div>@enderror
+            </div>
+
+            {{-- QA 6: الحساب البنكي (محفظة / تحويل بنكي) --}}
+            @php($bankAccountsList = \App\Models\Finance\BankAccount::with('bank:id,name')->get())
+            <div class="col-md-3 fv-row" id="bank_account_wrap">
+                <label class="form-label">الحساب البنكي</label>
+                <select class="form-select form-select-solid" name="bank_account_id">
+                    <option value="">الحساب الافتراضي للسيناريو</option>
+                    @foreach($bankAccountsList as $ba)
+                        <option value="{{$ba->id}}" {{old('bank_account_id', $isEdit ? $d->bank_account_id : '') == $ba->id ? 'selected' : ''}}>{{($ba->bank?->name ? $ba->bank->name . ' - ' : '') . $ba->account_number}}</option>
+                    @endforeach
+                </select>
+                <div class="text-muted fs-8 mt-1">يُرحَّل المبلغ المحصّل على الحساب البنكي المختار ويظهر في سجل حركاته.</div>
+                @error('bank_account_id')<div class="text-danger fs-7 mt-1">{{$message}}</div>@enderror
             </div>
 
             {{-- Status --}}
@@ -255,7 +275,7 @@
                                                 data-conversion-rate="{{$item->unitConversion->conversion_rate}}"
                                                 data-allow-fractions="{{$item->unitConversion->allow_fractions ? 'true' : 'false'}}"
                                                 data-decimal-places="{{$item->unitConversion->decimal_places}}">
-                                            {{$item->unitConversion->target_unit}} (× {{ rtrim(rtrim((string)$item->unitConversion->conversion_rate, '0'), '.') }} {{$item->unitConversion->base_unit}})
+                                            {{ $item->unitConversion->labelFor(\App\Models\Finance\Product::whereKey($item->product_id)->value('unit_id')) }}
                                         </option>
                                     @endif
                                 </select>

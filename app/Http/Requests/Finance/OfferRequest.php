@@ -113,4 +113,48 @@ class OfferRequest extends FormRequest
             'flash_quantity.required_if'  => 'الكمية المتاحة مطلوبة للعرض السريع.',
         ];
     }
+
+    /**
+     * QA 6: قيود كل نوع عرض حتى لا يُحفظ عرض يعطي خصماً صفرياً أو أكبر من الطلب
+     */
+    public function withValidator($validator): void
+    {
+        $validator->after(function ($validator) {
+            $type  = $this->input('type');
+            $value = (float) $this->input('value');
+            $err   = fn (string $f, string $m) => $validator->errors()->add($f, $m);
+
+            if (in_array($type, ['percentage', 'first_order'], true) && ($value <= 0 || $value > 100)) {
+                $err('value', 'نسبة الخصم يجب أن تكون أكبر من 0 ولا تتجاوز 100%.');
+            }
+            if (in_array($type, ['fixed', 'product_price_discount', 'bundle'], true) && $value <= 0) {
+                $err('value', 'القيمة يجب أن تكون أكبر من صفر.');
+            }
+            if (in_array($type, ['buy_x_get_discount', 'buy_amount_get_discount', 'flash'], true)
+                && (float) $this->input('discount_percentage') <= 0 && (float) $this->input('discount_amount') <= 0) {
+                $err('discount_percentage', 'حدد نسبة الخصم أو مبلغ الخصم لهذا العرض.');
+            }
+            if (in_array($this->input('applies_to'), ['product', 'category'], true)
+                && empty(array_filter((array) $this->input('item_ids', [])))) {
+                $err('item_ids', $this->input('applies_to') === 'product' ? 'اختر المنتجات المشمولة بالعرض.' : 'اختر الفئات المشمولة بالعرض.');
+            }
+            if ($type === 'free_shipping' && $this->input('applies_to') !== 'order') {
+                $err('applies_to', 'الشحن المجاني يُطبَّق على الطلب كاملاً.');
+            }
+            if ($type === 'tiered') {
+                $tiers = json_decode((string) $this->input('tier_thresholds'), true);
+                $valid = is_array($tiers) && count($tiers) > 0;
+                foreach ((array) $tiers as $t) {
+                    $min = $t['min_amount'] ?? $t['min'] ?? null;
+                    $pct = $t['discount_percentage'] ?? $t['discount'] ?? null;
+                    if (! is_numeric($min) || $min < 0 || ! is_numeric($pct) || $pct <= 0 || $pct > 100) {
+                        $valid = false;
+                    }
+                }
+                if (! $valid) {
+                    $err('tier_thresholds', 'أضف شريحة واحدة على الأقل: حد أدنى ≥ 0 ونسبة بين 0 و100.');
+                }
+            }
+        });
+    }
 }

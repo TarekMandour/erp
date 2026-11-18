@@ -549,7 +549,9 @@ $(function () {
         return subtotal;
     }
 
-    $('#apply_coupon_btn').on('click', function () {
+    function getOrderDate() { return $('input[name="date"]').val() || ''; }
+
+    $('#apply_coupon_btn').on('click', function (e, silent) {
         var code = $.trim($('#coupon_code_input').val());
         if (!code) return;
 
@@ -558,6 +560,7 @@ $(function () {
             subtotal:    getSubtotalForCoupon(),
             customer_id: getCustomerId(),
             order_id:    $('input[name="id"]').val() || '',
+            date:        getOrderDate(),
         }, function (res) {
             if (res.valid) {
                 $('#coupon_id_input').val(res.coupon_id);
@@ -568,8 +571,15 @@ $(function () {
                     .addClass('text-success');
                 $('#remove_coupon_btn').removeClass('d-none');
                 updateSummary();
+                // الخصم يعتمد على الكوبون: أعد حساب العرض المطبق
+                if ($('#offer_id_input').val() && !silent) $('#apply_offer_btn').trigger('click', [true]);
             } else {
-                // Keep previously applied coupon intact; just show error
+                // QA 6: عند إعادة الحساب التلقائي يُزال خصم الكوبون الذي لم يعد صالحاً
+                if (silent) {
+                    $('#coupon_id_input').val('');
+                    $('#coupon_discount_input').val(0);
+                    updateSummary();
+                }
                 $('#coupon_feedback')
                     .text(res.message)
                     .removeClass('text-success text-muted')
@@ -618,15 +628,17 @@ $(function () {
             items.push({
                 product_id: pid,
                 variant_id: $r.find('.item-variant').val() || '',
+                unit_conversion_id: $r.find('.item-unit').val() || '',
                 quantity:   $r.find('.item-qty').val()   || 0,
                 unit_price: $r.find('.item-price').val() || 0,
-                discount:   $r.find('.item-disc').val()  || 0
+                discount:   $r.find('.item-disc').val()  || 0,
+                tax_rate:   $r.find('.item-tax').val()   || 0
             });
         });
         return items;
     }
 
-    $('#apply_offer_btn').on('click', function () {
+    $('#apply_offer_btn').on('click', function (e, silent) {
         var offerId = $('#offer_select').val();
         if (!offerId) {
             $('#offer_feedback').text('يرجى اختيار عرض أولاً.').removeClass('text-success text-muted').addClass('text-danger');
@@ -638,7 +650,15 @@ $(function () {
             return;
         }
 
-        $.get(ajaxApplyOfferUrl, { offer_id: offerId, items: items }, function (res) {
+        $.get(ajaxApplyOfferUrl, {
+            offer_id:      offerId,
+            items:         items,
+            coupon_id:     $('#coupon_id_input').val() || '',
+            shipping_cost: $('#shipping_cost').val() || 0,
+            customer_id:   getCustomerId(),
+            order_id:      $('input[name="id"]').val() || '',
+            date:          getOrderDate()
+        }, function (res) {
             if (res.valid) {
                 $('#offer_id_input').val(res.offer_id);
                 $('#offer_discount_input').val(res.discount);
@@ -649,6 +669,11 @@ $(function () {
                 $('#remove_offer_btn').removeClass('d-none');
                 updateSummary();
             } else {
+                if (silent) {
+                    $('#offer_id_input').val('');
+                    $('#offer_discount_input').val(0);
+                    updateSummary();
+                }
                 $('#offer_feedback')
                     .text(res.message)
                     .removeClass('text-success text-muted')
@@ -678,7 +703,35 @@ $(function () {
         $row.remove();
         updateSummary(); updateGlobalStockWarning();
         if (pid) refreshSiblingBadges(pid, vid);
+        refreshDiscounts();
     });
+
+    /* QA 6: الخصومات تُحسب على الخادم — أي تغيير في البنود/الشحن/العميل/التاريخ يعيد حساب الكوبون والعرض */
+    var discountTimer = null;
+    function refreshDiscounts() {
+        clearTimeout(discountTimer);
+        discountTimer = setTimeout(function () {
+            if ($('#coupon_id_input').val()) {
+                $('#apply_coupon_btn').trigger('click', [true]);
+            }
+            if ($('#offer_id_input').val()) {
+                $('#apply_offer_btn').trigger('click', [true]);
+            }
+        }, 600);
+    }
+    $(document).on('input change', '.item-qty, .item-price, .item-disc, .item-tax, .item-unit, .item-variant', refreshDiscounts);
+    $('#shipping_cost, input[name="date"]').on('input change', refreshDiscounts);
+    $('#customer_select').on('change', refreshDiscounts);
+
+    // ── الحساب البنكي: للمحفظة والتحويل البنكي فقط ──
+    function toggleBankAccount() {
+        var type = $('select[name="payment_type"]').val();
+        var show = ['wallet', 'bank_online', 'bank_direct'].indexOf(type) !== -1;
+        $('#bank_account_wrap').toggle(show);
+        if (!show) $('select[name="bank_account_id"]').val('');
+    }
+    $('select[name="payment_type"]').on('change', toggleBankAccount);
+    toggleBankAccount();
 
     /* Add empty row manually */
     $('#addRowBtn').on('click', function () {

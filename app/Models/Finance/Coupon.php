@@ -34,7 +34,8 @@ class Coupon extends Model
 
     public function isExpired(): bool
     {
-        return $this->end_date->isPast();
+        // QA 6: الكوبون صالح طوال يوم الانتهاء
+        return $this->end_date && $this->end_date->toDateString() < now()->toDateString();
     }
 
     public function isUsageLimitReached(): bool

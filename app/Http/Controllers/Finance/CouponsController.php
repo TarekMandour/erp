@@ -50,7 +50,7 @@ class CouponsController extends Controller
                     return $row->start_date->format('Y-m-d') . ' → ' . $row->end_date->format('Y-m-d');
                 })
                 ->addColumn('status_badge', function ($row) {
-                    $expired  = $row->end_date->isPast();
+                    $expired  = $row->isExpired();
                     $maxed    = $row->usage_limit !== null && $row->used_count >= $row->usage_limit;
                     if (!$row->is_active) {
                         return '<span class="badge badge-light-danger">معطّل</span>';
@@ -94,13 +94,24 @@ class CouponsController extends Controller
         $request->validate([
             'code'             => 'required|string|max:100|unique:coupons,code',
             'type'             => 'required|in:percentage,fixed',
-            'value'            => 'required|numeric|min:0',
+            'value'            => ['required', 'numeric', 'gt:0', function ($attr, $v, $fail) use ($request) {
+                if ($request->type === 'percentage' && (float) $v > 100) {
+                    $fail('نسبة خصم الكوبون لا تتجاوز 100%.');
+                }
+            }],
             'max_discount'     => 'nullable|numeric|min:0',
             'min_order_amount' => 'nullable|numeric|min:0',
             'usage_limit'      => 'nullable|integer|min:1',
             'usage_per_user'   => 'nullable|integer|min:1',
             'start_date'       => 'required|date',
             'end_date'         => 'required|date|after_or_equal:start_date',
+        ], [
+            'code.unique'   => 'كود الكوبون مستخدم من قبل.',
+            'value.gt'      => 'قيمة الكوبون يجب أن تكون أكبر من صفر.',
+        ], [
+            'code' => 'كود الكوبون', 'type' => 'النوع', 'value' => 'القيمة', 'max_discount' => 'أقصى خصم',
+            'min_order_amount' => 'الحد الأدنى للطلب', 'usage_limit' => 'حد الاستخدام', 'usage_per_user' => 'الاستخدام لكل عميل',
+            'start_date' => 'تاريخ البدء', 'end_date' => 'تاريخ الانتهاء',
         ]);
 
         Coupon::create([
@@ -139,13 +150,24 @@ class CouponsController extends Controller
             'id'               => 'required|exists:coupons,id',
             'code'             => 'required|string|max:100|unique:coupons,code,' . $request->id,
             'type'             => 'required|in:percentage,fixed',
-            'value'            => 'required|numeric|min:0',
+            'value'            => ['required', 'numeric', 'gt:0', function ($attr, $v, $fail) use ($request) {
+                if ($request->type === 'percentage' && (float) $v > 100) {
+                    $fail('نسبة خصم الكوبون لا تتجاوز 100%.');
+                }
+            }],
             'max_discount'     => 'nullable|numeric|min:0',
             'min_order_amount' => 'nullable|numeric|min:0',
             'usage_limit'      => 'nullable|integer|min:1',
             'usage_per_user'   => 'nullable|integer|min:1',
             'start_date'       => 'required|date',
             'end_date'         => 'required|date|after_or_equal:start_date',
+        ], [
+            'code.unique'   => 'كود الكوبون مستخدم من قبل.',
+            'value.gt'      => 'قيمة الكوبون يجب أن تكون أكبر من صفر.',
+        ], [
+            'code' => 'كود الكوبون', 'type' => 'النوع', 'value' => 'القيمة', 'max_discount' => 'أقصى خصم',
+            'min_order_amount' => 'الحد الأدنى للطلب', 'usage_limit' => 'حد الاستخدام', 'usage_per_user' => 'الاستخدام لكل عميل',
+            'start_date' => 'تاريخ البدء', 'end_date' => 'تاريخ الانتهاء',
         ]);
 
         $record = Coupon::findOrFail($request->id);
@@ -171,7 +193,15 @@ class CouponsController extends Controller
     // -------------------------------------------------------
     public function destroy(Request $request)
     {
-        Coupon::findOrFail($request->id)->delete();
+        $coupon = Coupon::findOrFail($request->id);
+
+        // QA 6: حذف كوبون مستخدم كان يحذف سجل استخداماته ويفصل الطلبات عنه — عطّله بدلاً من ذلك
+        if (\App\Models\Finance\CouponUsage::where('coupon_id', $coupon->id)->exists()
+            || \App\Models\Finance\Order::where('coupon_id', $coupon->id)->exists()) {
+            return back()->with('error', 'لا يمكن حذف الكوبون «' . $coupon->code . '» لأنه مستخدم في طلبات، يمكنك تعطيله.');
+        }
+
+        $coupon->delete();
         return back()->with('success', 'تم حذف الكوبون بنجاح.');
     }
 

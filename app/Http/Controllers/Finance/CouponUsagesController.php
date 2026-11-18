@@ -90,7 +90,7 @@ class CouponUsagesController extends Controller
         ]);
 
         // Increment used_count on the coupon
-        Coupon::where('id', $request->coupon_id)->increment('used_count');
+        Coupon::where('id', $request->coupon_id)->update(['used_count' => CouponUsage::where('coupon_id', $request->coupon_id)->count()]);
 
         return redirect()->route($this->route . '.index')
             ->with('success', 'تم تسجيل استخدام الكوبون بنجاح.');
@@ -101,7 +101,10 @@ class CouponUsagesController extends Controller
     // -------------------------------------------------------
     public function destroy(Request $request)
     {
-        CouponUsage::findOrFail($request->id)->delete();
+        $usage = CouponUsage::findOrFail($request->id);
+        $usage->delete();
+        // QA 6: used_count يعكس الاستخدامات الفعلية
+        Coupon::where('id', $usage->coupon_id)->update(['used_count' => CouponUsage::where('coupon_id', $usage->coupon_id)->count()]);
         return back()->with('success', 'تم حذف السجل بنجاح.');
     }
 }

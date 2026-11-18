@@ -25,7 +25,7 @@ class AccountTreeSeeder extends Seeder
         $fixedAssets   = AccountTree::firstOrCreate(['code' => '1200'], ['name' => 'الأصول الثابتة', 'parent_id' => $assets->id, 'type' => 'asset', 'account_type' => 'debit', 'level' => 1, 'is_active' => true]);
 
         // ─── Current Assets (Level 2) ───
-        AccountTree::firstOrCreate(['code' => '1101'], ['name' => 'الصندوق (النقدية)', 'parent_id' => $currentAssets->id, 'type' => 'asset', 'account_type' => 'debit', 'level' => 2, 'is_active' => true]);
+        AccountTree::firstOrCreate(['code' => '1101'], ['name' => 'الصندوق (النقدية)', 'parent_id' => $currentAssets->id, 'type' => 'asset', 'account_type' => 'debit', 'level' => 2, 'is_active' => true, 'is_cash' => true]);
         AccountTree::firstOrCreate(['code' => '1102'], ['name' => 'البنك', 'parent_id' => $currentAssets->id, 'type' => 'asset', 'account_type' => 'debit', 'level' => 2, 'is_active' => true]);
         AccountTree::firstOrCreate(['code' => '1103'], ['name' => 'المخزون', 'parent_id' => $currentAssets->id, 'type' => 'asset', 'account_type' => 'debit', 'level' => 2, 'is_active' => true]);
         AccountTree::firstOrCreate(['code' => '1104'], ['name' => 'العملاء (ذمم مدينة)', 'parent_id' => $currentAssets->id, 'type' => 'asset', 'account_type' => 'debit', 'level' => 2, 'is_active' => true]);

@@ -111,29 +111,21 @@ class PostingRuleSeeder extends Seeder
         // ================================================================
 
         $orderPaymentAccounts = [
+            // QA 6: كل الأنواع: المحصّل على حساب التحصيل والباقي على العملاء (الآجل: العربون نقداً)
             'ORDER_CASH' => $cash?->id,
-            'ORDER_CREDIT' => null,
-            'ORDER_INSTALLMENTS' => null,
+            'ORDER_CREDIT' => $cash?->id,
+            'ORDER_INSTALLMENTS' => $cash?->id,
             'ORDER_WALLET' => $wallet?->id,
             'ORDER_BANK_ONLINE' => $bankOnline?->id,
             'ORDER_BANK_DIRECT' => $bankDirect?->id,
-            'ORDER_CHECK' => $checkPayable?->id,
+            'ORDER_CHECK' => $checkReceivable?->id, // أوراق قبض (كان أوراق دفع)
         ];
 
         foreach ($orderPaymentAccounts as $code => $paymentAccountId) {
             $scenario = PostingScenario::where('code', $code)->first();
             if (!$scenario) continue;
 
-            $isDeferred = in_array($code, ['ORDER_CREDIT', 'ORDER_INSTALLMENTS'], true);
-
-            if ($isDeferred) {
-                $rules[] = [
-                    'scenario_id'=>$scenario->id,'rule_group'=>1,
-                    'debit_account_id'=>$customers?->id,'credit_account_id'=>null,
-                    'amount_type'=>'field','formula'=>'total',
-                    'sort_order'=>1,'is_required'=>1
-                ];
-            } else {
+            {
                 $rules[] = [
                     'scenario_id'=>$scenario->id,'rule_group'=>1,
                     'debit_account_id'=>$paymentAccountId,'credit_account_id'=>null,
@@ -170,7 +162,7 @@ class PostingRuleSeeder extends Seeder
             $rules[] = [
                 'scenario_id'=>$scenario->id,'rule_group'=>1,
                 'debit_account_id'=>null,'credit_account_id'=>$salesRev?->id,
-                'amount_type'=>'subtotal','amount_field'=>'subtotal',
+                'amount_type'=>'formula','amount_field'=>null,'formula'=>'subtotal + discount', // QA 6: الإيراد الإجمالي قبل خصم البنود
                 'sort_order'=>6,'is_required'=>1
             ];
             $rules[] = [
@@ -209,12 +201,12 @@ class PostingRuleSeeder extends Seeder
 
         $orderReturnPaymentAccounts = [
             'ORDER_RETURN_CASH' => $cash?->id,
-            'ORDER_RETURN_CREDIT' => null,
-            'ORDER_RETURN_INSTALLMENTS' => null,
+            'ORDER_RETURN_CREDIT' => $cash?->id,
+            'ORDER_RETURN_INSTALLMENTS' => $cash?->id,
             'ORDER_RETURN_WALLET' => $wallet?->id,
             'ORDER_RETURN_BANK_ONLINE' => $bankOnline?->id,
             'ORDER_RETURN_BANK_DIRECT' => $bankDirect?->id,
-            'ORDER_RETURN_CHECK' => $checkPayable?->id,
+            'ORDER_RETURN_CHECK' => $checkReceivable?->id,
         ];
 
         foreach ($orderReturnPaymentAccounts as $code => $paymentAccountId) {
@@ -224,7 +216,7 @@ class PostingRuleSeeder extends Seeder
             $rules[] = [
                 'scenario_id'=>$scenario->id,'rule_group'=>1,
                 'debit_account_id'=>$salesRev?->id,'credit_account_id'=>null,
-                'amount_type'=>'subtotal','amount_field'=>'subtotal',
+                'amount_type'=>'formula','amount_field'=>null,'formula'=>'subtotal + discount',
                 'sort_order'=>1,'is_required'=>1
             ];
             $rules[] = [
@@ -260,20 +252,7 @@ class PostingRuleSeeder extends Seeder
                 'sort_order'=>6,'is_required'=>0
             ];
 
-            if ($code === 'ORDER_RETURN_CREDIT' || $code === 'ORDER_RETURN_INSTALLMENTS') {
-                $rules[] = [
-                    'scenario_id'=>$scenario->id,'rule_group'=>1,
-                    'debit_account_id'=>null,'credit_account_id'=>$customers?->id,
-                    'amount_type'=>'formula','formula'=>'total - paid',
-                    'sort_order'=>7,'is_required'=>0
-                ];
-                $rules[] = [
-                    'scenario_id'=>$scenario->id,'rule_group'=>1,
-                    'debit_account_id'=>null,'credit_account_id'=>$customers?->id,
-                    'amount_type'=>'total','amount_field'=>'paid',
-                    'sort_order'=>8,'is_required'=>0
-                ];
-            } else {
+            {
                 $rules[] = [
                     'scenario_id'=>$scenario->id,'rule_group'=>1,
                     'debit_account_id'=>null,'credit_account_id'=>$paymentAccountId,

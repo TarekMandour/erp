@@ -264,27 +264,10 @@ class InventoryTransferController extends Controller
     // -------------------------------------------------------
     public function ajaxUnitConversions(Request $request)
     {
-        $productId = (int) $request->product_id;
         $variantId = $request->filled('variant_id') ? (int) $request->variant_id : null;
 
-        $conversions = UnitConversion::with(['baseUnit', 'targetUnit'])
-            ->where('product_id', $productId)
-            ->when(
-                $variantId,
-                fn($q) => $q->where(fn($q2) => $q2->where('variant_id', $variantId)->orWhereNull('variant_id')),
-                fn($q) => $q->whereNull('variant_id')
-            )
-            ->get();
-
         return response()->json([
-            'results' => $conversions->map(fn($c) => [
-                'id'              => $c->id,
-                'text'            => ($c->targetUnit->name ?? '—') . ' (× ' . rtrim(rtrim((string) $c->conversion_rate, '0'), '.') . ' ' . ($c->baseUnit->name ?? '—') . ')',
-                'conversion_rate' => (float) $c->conversion_rate,
-                'is_default'      => (bool) $c->is_default,
-                'allow_fractions' => (bool) $c->allow_fractions,
-                'decimal_places'  => (int) $c->decimal_places,
-            ]),
+            'results' => UnitConversion::dropdownFor((int) $request->product_id, $variantId),
         ]);
     }
 

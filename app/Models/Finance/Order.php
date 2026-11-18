@@ -17,6 +17,7 @@ class Order extends Model
         'date',
         'delivery_date',
         'payment_type',
+        'bank_account_id',
         'status',
         'notes',
         'shipping_address',
@@ -75,6 +76,19 @@ class Order extends Model
 
     // Statuses that cannot be edited / are "locked"
     public static array $lockedStatuses = ['shipped', 'delivered', 'cancelled'];
+
+    // QA 6: الحالات التي يكون للطلب فيها أثر (مخزون + محفظة + قيود)
+    public static array $effectiveStatuses = ['confirmed', 'processing', 'shipped', 'delivered'];
+
+    public function getIsEffectiveAttribute(): bool
+    {
+        return in_array($this->status, static::$effectiveStatuses, true);
+    }
+
+    public function bankAccount()
+    {
+        return $this->belongsTo(BankAccount::class);
+    }
 
     public function getStatusLabelAttribute(): string
     {

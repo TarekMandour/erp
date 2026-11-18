@@ -134,6 +134,20 @@ class TransactionsService
             return null;
         }
 
+        return $this->reverseEntry($oldJournalEntry, $sourceModel);
+    }
+
+    /**
+     * عكس قيد محدد بقيد عكسي مرحّل وإلغاء الأصل (يُستخدم لعكس كل قيود مستند متعدد القيود)
+     *
+     * @throws \Throwable
+     */
+    public function reverseEntry(JournalEntry $oldJournalEntry, Model $sourceModel): ?JournalEntry
+    {
+        if ($oldJournalEntry->status === 'canceled') {
+            return null;
+        }
+
         return DB::transaction(function () use ($sourceModel, $oldJournalEntry) {
             $reverseEntry = JournalEntry::create([
                 'entry_number'  => $this->entryBuilder->generateReverseEntryNumber($oldJournalEntry->entry_number),

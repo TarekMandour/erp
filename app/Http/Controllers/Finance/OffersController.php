@@ -43,13 +43,14 @@ class OffersController extends Controller
                 ->addColumn('value_display', function ($row) {
                     return match ($row->type) {
                         'percentage', 'first_order'       => number_format((float) $row->value, 2) . '%',
-                        'fixed', 'product_price_discount' => number_format((float) $row->value, 2) . ' ر.س',
-                        'bundle'                          => number_format((float) $row->value, 2) . ' ر.س / حزمة',
+                        'fixed'                           => number_format((float) $row->value, 2) . ' ر.س',
+                        'product_price_discount'          => number_format((float) $row->value, 2) . ' ر.س / وحدة',
+                        'bundle'                          => $row->buy_quantity . ' قطع بـ ' . number_format((float) $row->value, 2) . ' ر.س',
                         'buy_x_get_y'                     => 'اشتري ' . $row->buy_quantity . ' → ' . $row->get_quantity . ' مجاناً',
-                        'buy_x_get_discount'              => 'اشتري ' . $row->buy_quantity . ' → خصم',
+                        'buy_x_get_discount'              => 'اشتري ' . $row->buy_quantity . ' → خصم ' . ((float) $row->discount_percentage > 0 ? number_format((float) $row->discount_percentage, 2) . '%' : number_format((float) $row->discount_amount, 2) . ' ر.س'),
                         'buy_amount_get_discount'         => 'من ' . number_format((float) $row->min_amount, 2) . ' ر.س',
                         'tiered'                          => 'متدرج (' . count((array) $row->tier_thresholds) . ' شرائح)',
-                        'flash'                           => $row->flash_quantity ? $row->flash_quantity . ' وحدة' : '—',
+                        'flash'                           => ($row->flash_quantity ? $row->flash_quantity . ' وحدة — ' : '') . ((float) $row->discount_percentage > 0 ? number_format((float) $row->discount_percentage, 2) . '%' : number_format((float) $row->discount_amount, 2) . ' ر.س'),
                         'free_shipping'                   => $row->min_amount ? 'من ' . number_format((float) $row->min_amount, 2) . ' ر.س' : 'بلا حد أدنى',
                         default                           => '—',
                     };
@@ -140,7 +141,15 @@ class OffersController extends Controller
     // -------------------------------------------------------
     public function destroy(Request $request)
     {
-        Offer::findOrFail($request->id)->delete();
+        $offer = Offer::findOrFail($request->id);
+
+        // QA 6: العرض المستخدم في طلبات لا يُحذف (يبقى مرجعاً لخصم الطلب) — عطّله بدلاً من ذلك
+        if (\App\Models\Finance\Order::where('offer_id', $offer->id)->exists()) {
+            return back()->with('error', 'لا يمكن حذف العرض «' . $offer->name . '» لأنه مستخدم في طلبات بيع، يمكنك تعطيله.');
+        }
+
+        $offer->delete();
+        DB::table('offer_items')->where('offer_id', $offer->id)->delete();
         return back()->with('success', 'تم حذف العرض بنجاح.');
     }
 

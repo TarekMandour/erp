@@ -49,6 +49,12 @@ class TreasuryRequest extends FormRequest
                 return;
             }
 
+            // QA 7.2: الخزنة تُربط بحساب نقدية فقط (لا المخزون ولا العملاء ولا البنك)
+            if (! $account->is_cash) {
+                $validator->errors()->add('account_tree_id', 'الحساب «' . $account->code . ' - ' . $account->name . '» ليس حساب نقدية. فعّل «حساب نقدية» له في شجرة الحسابات أو اختر حساب الصندوق.');
+                return;
+            }
+
             $id = $this->input('id');
             $usedByTreasury = \App\Models\Finance\Treasury::where('account_tree_id', $accountId)->when($id, fn ($q) => $q->where('id', '!=', $id))->exists();
             $usedByBank     = \App\Models\Finance\BankAccount::where('account_tree_id', $accountId)->exists();

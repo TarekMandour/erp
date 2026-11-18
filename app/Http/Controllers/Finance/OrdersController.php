@@ -21,7 +21,8 @@ use App\Models\Finance\CouponUsage;
 use App\Models\Finance\Offer;
 use App\Http\Requests\Finance\OrderRequest;
 use App\Services\Finance\OrderService;
-use App\Services\Finance\TransactionsService;
+use App\Services\Finance\OrderPricingService;
+use Illuminate\Validation\ValidationException;
 
 class OrdersController extends Controller
 {
@@ -29,7 +30,7 @@ class OrdersController extends Controller
 
     public function __construct(
         private OrderService $orderService,
-        private TransactionsService $transactionsService,
+        private OrderPricingService $pricing,
     ) {}
 
     // -------------------------------------------------------
@@ -109,36 +110,12 @@ class OrdersController extends Controller
     // -------------------------------------------------------
     public function store(OrderRequest $request)
     {
-        // Validate stock availability before saving
-        $stockError = $this->checkStock($request->items, $request->warehouse_id);
-        if ($stockError) {
-            return back()->withInput()->withErrors(['items' => $stockError]);
-        }
+        return $this->guard(function () use ($request) {
+            DB::transaction(fn () => $this->persist($this->mapHeader($request), $request->items));
 
-        $order = null;
-
-        $dispatcher = Order::getEventDispatcher();
-        Order::unsetEventDispatcher();
-
-        try {
-            DB::transaction(function () use ($request, &$order) {
-                $order = Order::create($this->mapHeader($request));
-                $this->syncItems($order, $request->items);
-                $this->recalcTotals($order);
-                $this->recordCouponUsage($order, $request);
-                $this->recordOfferUsage($order, null);
-            });
-        } finally {
-            Order::setEventDispatcher($dispatcher);
-        }
-
-        if ($order->status === 'confirmed') {
-            $this->transactionsService->process($order->fresh());
-            $this->orderService->apply($order->fresh(['items.unitConversion']));
-        }
-
-        return redirect()->route($this->route . '.index')
-            ->with('success', 'تم إضافة الطلب بنجاح.');
+            return redirect()->route($this->route . '.index')
+                ->with('success', 'تم إضافة الطلب بنجاح.');
+        });
     }
 
     // -------------------------------------------------------
@@ -181,59 +158,26 @@ class OrdersController extends Controller
     // -------------------------------------------------------
     public function update(OrderRequest $request)
     {
-        $order = Order::with('items.unitConversion')->findOrFail($request->id);
+        $order = Order::with('items')->findOrFail($request->id);
 
         if ($order->is_locked) {
             return back()->withErrors(['items' => 'لا يمكن تعديل طلب بهذه الحالة.']);
         }
 
-        $stockError = $this->checkStock($request->items, $request->warehouse_id, $order->id);
-        if ($stockError) {
-            return back()->withInput()->withErrors(['items' => $stockError]);
-        }
-
-        $wasConfirmed = $order->status === 'confirmed';
-        $isCancelled  = $request->status === 'cancelled';
-        $willConfirm  = $request->status === 'confirmed';
-
-        // عكس الآثار القديمة إذا كان الطلب مؤكداً
-        if ($wasConfirmed) {
-            $this->orderService->reverse($order);
-            $this->transactionsService->reverse($order);
-        }
-
-        $dispatcher = Order::getEventDispatcher();
-        Order::unsetEventDispatcher();
-
-        try {
-            DB::transaction(function () use ($request, $order, $isCancelled) {
-                $oldCouponId = $order->coupon_id;
-                $oldOfferId  = $order->offer_id;
-                $order->update($this->mapHeader($request));
-
-                if (! $isCancelled) {
-                    $order->items()->delete();
-                    $this->syncItems($order, $request->items);
-                    $this->recalcTotals($order);
-                    if ($oldCouponId && $oldCouponId !== $order->coupon_id) {
-                        CouponUsage::where('order_id', $order->id)->delete();
-                        Coupon::where('id', $oldCouponId)->decrement('used_count');
-                    }
-                    $this->recordCouponUsage($order, $request);
-                    $this->recordOfferUsage($order, $oldOfferId);
+        return $this->guard(function () use ($request, $order) {
+            DB::transaction(function () use ($request, $order) {
+                if ($request->status === 'cancelled') {
+                    // الإلغاء: عكس كل الآثار مع إبقاء بيانات الطلب كما هي
+                    $this->cancel($order, $request->notes);
+                    return;
                 }
+
+                $this->persist($this->mapHeader($request, $order), $request->items, $order);
             });
-        } finally {
-            Order::setEventDispatcher($dispatcher);
-        }
 
-        if ($willConfirm) {
-            $this->transactionsService->process($order->fresh());
-            $this->orderService->apply($order->fresh(['items.unitConversion']));
-        }
-
-        return redirect()->route($this->route . '.index')
-            ->with('success', 'تم تحديث الطلب بنجاح.');
+            return redirect()->route($this->route . '.index')
+                ->with('success', 'تم تحديث الطلب بنجاح.');
+        });
     }
 
     // -------------------------------------------------------
@@ -241,19 +185,25 @@ class OrdersController extends Controller
     // -------------------------------------------------------
     public function destroy(Request $request)
     {
-        $order = Order::with('items.unitConversion')->findOrFail($request->id);
+        $order = Order::with('items')->findOrFail($request->id);
 
         if ($order->is_locked) {
             return back()->with('error', 'لا يمكن حذف طلب بهذه الحالة.');
         }
 
-        if ($order->status === 'confirmed') {
-            $this->orderService->reverse($order);
-            $this->transactionsService->reverse($order);
-        }
+        return $this->guard(function () use ($order) {
+            DB::transaction(function () use ($order) {
+                if ($order->is_effective) {
+                    $this->orderService->reverse($order);
+                }
+                CouponUsage::where('order_id', $order->id)->delete();
+                $order->items()->delete();
+                $order->delete();
+                $this->recountUsage([$order->coupon_id], [$order->offer_id]);
+            });
 
-        $order->delete();
-        return back()->with('success', 'تم حذف الطلب بنجاح.');
+            return back()->with('success', 'تم حذف الطلب وعكس آثاره بنجاح.');
+        });
     }
 
     // -------------------------------------------------------
@@ -277,56 +227,40 @@ class OrdersController extends Controller
             return back()->with('error', 'الملف فارغ أو لا يحتوي على بيانات.');
         }
 
-        DB::transaction(function () use ($rows, &$errors, &$created) {
-            foreach ($rows as $index => $row) {
-                $rowNum = $index + 2;
-                $row    = array_map('trim', array_change_key_case((array)$row));
+        foreach ($rows as $index => $row) {
+            $rowNum = $index + 2;
+            $row    = array_map('trim', array_change_key_case((array)$row));
 
-                $customerName  = $row['العميل']       ?? $row['customer']      ?? null;
-                $warehouseName = $row['المستودع']      ?? $row['warehouse']     ?? null;
-                $date          = $row['التاريخ']       ?? $row['date']          ?? null;
-                $paymentType   = $row['طريقة الدفع']   ?? $row['payment']       ?? 'cash';
-                $notes         = $row['الملاحظات']     ?? $row['notes']         ?? null;
-                $productSku    = $row['رمز المنتج']    ?? $row['sku']           ?? null;
-                $quantity      = $row['الكمية']        ?? $row['quantity']      ?? null;
-                $unitPrice     = $row['سعر الوحدة']    ?? $row['unit_price']    ?? null;
-                $discountAmt   = $row['الخصم']         ?? $row['discount']      ?? 0;
-                $taxRate       = $row['نسبة الضريبة']  ?? $row['tax_rate']      ?? 0;
+            $customerName  = $row['العميل']       ?? $row['customer']      ?? null;
+            $warehouseName = $row['المستودع']      ?? $row['warehouse']     ?? null;
+            $date          = $row['التاريخ']       ?? $row['date']          ?? null;
+            $paymentType   = $row['طريقة الدفع']   ?? $row['payment']       ?? 'cash';
+            $notes         = $row['الملاحظات']     ?? $row['notes']         ?? null;
+            $productSku    = $row['رمز المنتج']    ?? $row['sku']           ?? null;
+            $quantity      = $row['الكمية']        ?? $row['quantity']      ?? null;
+            $unitPrice     = $row['سعر الوحدة']    ?? $row['unit_price']    ?? null;
+            $discountAmt   = $row['الخصم']         ?? $row['discount']      ?? 0;
+            $taxRate       = $row['نسبة الضريبة']  ?? $row['tax_rate']      ?? 0;
 
-                if (!$customerName || !$warehouseName || !$date || !$productSku || !$quantity || !$unitPrice) {
-                    $errors[] = "السطر {$rowNum}: بيانات ناقصة.";
-                    continue;
-                }
+            if (!$customerName || !$warehouseName || !$date || !$productSku || !$quantity || !$unitPrice) {
+                $errors[] = "السطر {$rowNum}: بيانات ناقصة.";
+                continue;
+            }
 
-                $customer  = Customer::where('name', $customerName)->orWhere('customer_code', $customerName)->first();
-                $warehouse = Warehouse::where('name', $warehouseName)->first();
-                $product   = Product::where('sku', $productSku)->orWhere('name', $productSku)->first();
+            $customer  = Customer::where('name', $customerName)->orWhere('customer_code', $customerName)->first();
+            $warehouse = Warehouse::where('name', $warehouseName)->first();
+            $product   = Product::where('sku', $productSku)->orWhere('name', $productSku)->first();
 
-                if (!$customer)  { $errors[] = "السطر {$rowNum}: العميل «{$customerName}» غير موجود.";    continue; }
-                if (!$warehouse) { $errors[] = "السطر {$rowNum}: المستودع «{$warehouseName}» غير موجود."; continue; }
-                if (!$product)   { $errors[] = "السطر {$rowNum}: المنتج «{$productSku}» غير موجود.";      continue; }
+            if (!$customer)  { $errors[] = "السطر {$rowNum}: العميل «{$customerName}» غير موجود.";    continue; }
+            if (!$warehouse) { $errors[] = "السطر {$rowNum}: المستودع «{$warehouseName}» غير موجود."; continue; }
+            if (!$product)   { $errors[] = "السطر {$rowNum}: المنتج «{$productSku}» غير موجود.";      continue; }
 
-                $paymentMap  = ['نقدي' => 'cash', 'آجل' => 'credit', 'محفظة' => 'wallet'];
-                $paymentType = $paymentMap[$paymentType] ?? (in_array($paymentType, ['cash', 'credit', 'wallet']) ? $paymentType : 'cash');
+            $paymentMap  = ['نقدي' => 'cash', 'آجل' => 'credit', 'محفظة' => 'wallet'];
+            $paymentType = $paymentMap[$paymentType] ?? (in_array($paymentType, ['cash', 'credit', 'wallet']) ? $paymentType : 'cash');
 
-                $qty      = (float)$quantity;
-                $price    = (float)$unitPrice;
-                $disc     = (float)$discountAmt;
-                $tax      = (float)$taxRate;
-                $rowTotal = round(($qty * $price - $disc) * (1 + $tax / 100), 2);
-
-                // Stock check
-                $stock = InventoryItem::where('warehouse_id', $warehouse->id)
-                    ->where('product_id', $product->id)
-                    ->whereNull('variant_id')
-                    ->value('quantity') ?? 0;
-
-                if ((float)$stock < $qty) {
-                    $errors[] = "السطر {$rowNum}: الكمية المطلوبة ({$qty}) تتجاوز المخزون المتاح ({$stock}).";
-                    continue;
-                }
-
-                $order = Order::create([
+            // QA 6: نفس مسار الحفظ (مخزون + محفظة + قيد) — الاستيراد كان يُنشئ طلبات مؤكدة بلا أي أثر
+            try {
+                DB::transaction(fn () => $this->persist([
                     'order_number'  => Order::generateNumber(),
                     'customer_id'   => $customer->id,
                     'warehouse_id'  => $warehouse->id,
@@ -334,28 +268,20 @@ class OrdersController extends Controller
                     'payment_type'  => $paymentType,
                     'status'        => 'confirmed',
                     'notes'         => $notes,
-                    'subtotal'      => round($qty * $price - $disc, 2),
-                    'discount'      => $disc,
-                    'tax'           => round(($qty * $price - $disc) * $tax / 100, 2),
                     'shipping_cost' => 0,
-                    'total'         => $rowTotal,
                     'paid'          => 0,
-                ]);
-
-                OrderItem::create([
-                    'order_id'   => $order->id,
+                ], [[
                     'product_id' => $product->id,
-                    'variant_id' => null,
-                    'quantity'   => $qty,
-                    'unit_price' => $price,
-                    'discount'   => $disc,
-                    'tax_rate'   => $tax,
-                    'total'      => $rowTotal,
-                ]);
-
+                    'quantity'   => (float) $quantity,
+                    'unit_price' => (float) $unitPrice,
+                    'discount'   => (float) $discountAmt,
+                    'tax_rate'   => (float) $taxRate,
+                ]]));
                 $created++;
+            } catch (ValidationException $e) {
+                $errors[] = "السطر {$rowNum}: " . collect($e->errors())->flatten()->first();
             }
-        });
+        }
 
         $msg = "تم استيراد {$created} طلب بنجاح.";
         if (!empty($errors)) {
@@ -396,57 +322,24 @@ class OrdersController extends Controller
         $subtotal   = (float)($request->subtotal ?? 0);
         $customerId = $request->filled('customer_id') ? (int)$request->customer_id : null;
         $orderId    = $request->filled('order_id')    ? (int)$request->order_id    : null;
+        $date       = $request->filled('date') ? (string)$request->date : now()->toDateString();
 
         if (!$code) {
             return response()->json(['valid' => false, 'message' => 'يرجى إدخال رمز الكوبون.']);
         }
 
-        $coupon = Coupon::where('code', $code)->first();
+        $coupon = Coupon::where('code', strtoupper($code))->first();
 
         if (!$coupon) {
             return response()->json(['valid' => false, 'message' => 'رمز الكوبون غير صحيح.']);
         }
 
-        if (!$coupon->is_active) {
-            return response()->json(['valid' => false, 'message' => 'الكوبون غير مفعّل.']);
+        // QA 6: نفس قواعد الخادم عند الحفظ (التاريخ شامل يوم البدء، الحدود بدون هذا الطلب)
+        if ($error = $this->pricing->couponError($coupon, $subtotal, $customerId, $date, $orderId)) {
+            return response()->json(['valid' => false, 'message' => $error]);
         }
 
-        $today = now()->toDateString();
-        $startDate = (string)$coupon->start_date;
-        $endDate   = (string)$coupon->end_date;
-        if ($startDate > $today || $endDate < $today) {
-            return response()->json(['valid' => false, 'message' => 'الكوبون خارج نطاق التاريخ الصالح.']);
-        }
-
-        if ($coupon->usage_limit !== null && $coupon->used_count >= $coupon->usage_limit) {
-            return response()->json(['valid' => false, 'message' => 'تم استنفاد عدد مرات استخدام هذا الكوبون.']);
-        }
-
-        if ($coupon->min_order_amount !== null && $subtotal < (float)$coupon->min_order_amount) {
-            return response()->json([
-                'valid'   => false,
-                'message' => 'الحد الأدنى للطلب لاستخدام هذا الكوبون هو ' . number_format((float)$coupon->min_order_amount, 2) . ' ر.س',
-            ]);
-        }
-
-        if ($customerId && $coupon->usage_per_user !== null) {
-            $usedByUser = CouponUsage::where('coupon_id', $coupon->id)
-                ->where('customer_id', $customerId)
-                ->when($orderId, fn($q) => $q->where('order_id', '!=', $orderId))
-                ->count();
-            if ($usedByUser >= $coupon->usage_per_user) {
-                return response()->json(['valid' => false, 'message' => 'لقد وصلت للحد الأقصى من استخدام هذا الكوبون.']);
-            }
-        }
-
-        if ($coupon->type === 'percentage') {
-            $discount = round($subtotal * (float)$coupon->value / 100, 2);
-            if ($coupon->max_discount !== null) {
-                $discount = min($discount, (float)$coupon->max_discount);
-            }
-        } else {
-            $discount = min((float)$coupon->value, $subtotal);
-        }
+        $discount = $this->pricing->couponDiscount($coupon, $subtotal);
 
         return response()->json([
             'valid'      => true,
@@ -491,6 +384,8 @@ class OrdersController extends Controller
     {
         $offerId = (int)($request->offer_id ?? 0);
         $items   = $request->items ?? [];
+        $orderId = $request->filled('order_id') ? (int)$request->order_id : null;
+        $date    = $request->filled('date') ? (string)$request->date : now()->toDateString();
 
         if (!$offerId) {
             return response()->json(['valid' => false, 'message' => 'يرجى اختيار عرض.']);
@@ -506,22 +401,29 @@ class OrdersController extends Controller
             return response()->json(['valid' => false, 'message' => 'العرض غير موجود.']);
         }
 
-        if (!$offer->is_active) {
-            return response()->json(['valid' => false, 'message' => 'العرض غير مفعّل.']);
+        if ($error = $this->pricing->offerError($offer, $date, $orderId)) {
+            return response()->json(['valid' => false, 'message' => $error]);
         }
 
-        $today = now()->toDateString();
-        if ((string)$offer->start_date > $today || (string)$offer->end_date < $today) {
-            return response()->json(['valid' => false, 'message' => 'العرض خارج نطاق التاريخ الصالح.']);
+        if ($request->filled('coupon_id') && !$offer->is_stackable) {
+            return response()->json(['valid' => false, 'message' => 'العرض «' . $offer->name . '» غير قابل للجمع مع كوبون خصم.']);
         }
 
-        if ($offer->max_uses !== null && $offer->used_count >= $offer->max_uses) {
-            return response()->json(['valid' => false, 'message' => 'تم استنفاد عدد مرات استخدام هذا العرض.']);
+        try {
+            $lines = $this->pricing->normalizeItems(array_values(array_filter($items, fn($i) => !empty($i['product_id']))));
+        } catch (ValidationException $e) {
+            return response()->json(['valid' => false, 'message' => collect($e->errors())->flatten()->first()]);
         }
 
-        $result = $this->applyOfferDiscount($offer, $items);
+        $result = $this->pricing->offerDiscount(
+            $offer,
+            $lines,
+            (float)($request->shipping_cost ?? 0),
+            $request->filled('customer_id') ? (int)$request->customer_id : null,
+            $orderId
+        );
 
-        if (isset($result['valid']) && !$result['valid']) {
+        if (!$result['valid']) {
             return response()->json($result);
         }
 
@@ -731,28 +633,10 @@ class OrdersController extends Controller
     // -------------------------------------------------------
     public function ajaxUnitConversions(Request $request)
     {
-        $productId = (int)$request->product_id;
-        $variantId = $request->filled('variant_id') ? (int)$request->variant_id : null;
-
-        $conversions = UnitConversion::where('product_id', $productId)
-            ->when(
-                $variantId,
-                fn($q) => $q->where(fn($q2) => $q2->where('variant_id', $variantId)->orWhereNull('variant_id')),
-                fn($q) => $q->whereNull('variant_id')
-            )
-            ->get(['id', 'base_unit', 'target_unit', 'conversion_rate', 'is_default', 'allow_fractions', 'decimal_places']);
+        $variantId = $request->filled('variant_id') ? (int) $request->variant_id : null;
 
         return response()->json([
-            'results' => $conversions->map(fn($c) => [
-                'id'              => $c->id,
-                'text'            => $c->targetUnit->name . ' (× ' . rtrim(rtrim((string)$c->conversion_rate, '0'), '.') . ' ' . $c->baseUnit->name . ')',
-                'base_unit'       => $c->base_unit,
-                'target_unit'     => $c->target_unit,
-                'conversion_rate' => (float)$c->conversion_rate,
-                'is_default'      => (bool)$c->is_default,
-                'allow_fractions' => (bool)$c->allow_fractions,
-                'decimal_places'  => (int)$c->decimal_places,
-            ]),
+            'results' => UnitConversion::dropdownFor((int) $request->product_id, $variantId),
         ]);
     }
 
@@ -787,415 +671,166 @@ class OrdersController extends Controller
     }
 
     /**
-     * Record coupon usage and increment used_count (skips if no coupon applied).
-     * Idempotent for updates: replaces existing usage record.
+     * QA 6: تنفيذ طلب (حفظ أو تحديث) داخل معاملة واحدة:
+     * تسعير الخادم ← تحقق المدفوع ← عكس الآثار القديمة عند الحاجة ← حفظ ← تطبيق الآثار ← الاستخدامات
+     *
+     * @throws ValidationException
      */
-    private function recordCouponUsage(Order $order, Request $request): void
+    private function persist(array $header, array $items, ?Order $order = null): Order
     {
-        $couponId = $order->coupon_id;
-        if (!$couponId || !$order->customer_id) {
-            return;
-        }
+        $priced = $this->pricing->price($header, $items, $order);
+        $header = array_merge($header, $priced['header']);
+        $header['paid'] = round((float)($header['paid'] ?? 0), 2);
 
-        $discountAmount = (float)$order->coupon_discount;
-
-        $existing = CouponUsage::where('order_id', $order->id)->where('coupon_id', $couponId)->first();
-        if ($existing) {
-            $existing->update(['discount_amount' => $discountAmount, 'used_at' => now()]);
-            return;
-        }
-
-        CouponUsage::create([
-            'coupon_id'       => $couponId,
-            'customer_id'     => $order->customer_id,
-            'order_id'        => $order->id,
-            'discount_amount' => $discountAmount,
-            'used_at'         => now(),
-        ]);
-
-        Coupon::where('id', $couponId)->increment('used_count');
-    }
-
-    /**
-     * Check stock for all items. Returns error string or null.
-     * $excludeOrderId: when updating, exclude current order's reserved qty (if applicable).
-     */
-    private function checkStock(array $items, int $warehouseId, ?int $excludeOrderId = null): ?string
-    {
-        // When updating a confirmed order, its quantities are already deducted from inventory.
-        // Add them back per product/variant so the check is based on effective available stock.
-        $reservedQtys = [];
-        if ($excludeOrderId) {
-            $existingOrder = Order::find($excludeOrderId);
-            if ($existingOrder && $existingOrder->status === 'confirmed') {
-                $existingItems = OrderItem::where('order_id', $excludeOrderId)->get();
-                foreach ($existingItems as $ei) {
-                    $rate = 1;
-                    if ($ei->unit_conversion_id) {
-                        $rate = (float)(UnitConversion::find($ei->unit_conversion_id)?->conversion_rate ?? 1);
-                    }
-                    $key = $ei->product_id . '_' . ($ei->variant_id ?? 'null');
-                    $reservedQtys[$key] = ($reservedQtys[$key] ?? 0) + round((float)$ei->quantity * $rate, 6);
-                }
-            }
-        }
-
-        $errors = [];
-
-        foreach ($items as $idx => $item) {
-            $qty              = (float)($item['quantity'] ?? 0);
-            $productId        = (int)($item['product_id'] ?? 0);
-            $variantId        = !empty($item['variant_id']) ? (int)$item['variant_id'] : null;
-            $unitConversionId = !empty($item['unit_conversion_id']) ? (int)$item['unit_conversion_id'] : null;
-
-            // Convert entered qty to base units for stock comparison
-            if ($unitConversionId) {
-                $rate = (float)(UnitConversion::find($unitConversionId)?->conversion_rate ?? 1);
-                $qty  = round($qty * $rate, 6);
-            }
-
-            $stock = (float)(InventoryItem::where('warehouse_id', $warehouseId)
-                ->where('product_id', $productId)
-                ->when($variantId,
-                    fn($q) => $q->where('variant_id', $variantId),
-                    fn($q) => $q->whereNull('variant_id'))
-                ->value('quantity') ?? 0);
-
-            // Add back this order's previously reserved quantity (effective available stock)
-            $key   = $productId . '_' . ($variantId ?? 'null');
-            $stock += ($reservedQtys[$key] ?? 0);
-
-            if ($qty > $stock) {
-                $productName = Product::find($productId)?->name ?? "#$productId";
-                $errors[] = "المنتج «{$productName}» — الكمية المطلوبة ({$qty}) تتجاوز المخزون المتاح ({$stock}).";
-            }
-        }
-
-        return $errors ? implode("\n", $errors) : null;
-    }
-
-    private function mapHeader(OrderRequest $request): array
-    {
-        return [
-            'order_number'    => $request->order_number ?: Order::generateNumber(),
-            'customer_id'     => $request->customer_id,
-            'warehouse_id'    => $request->warehouse_id,
-            'date'            => $request->date,
-            'delivery_date'   => $request->delivery_date ?: null,
-            'payment_type'    => $request->payment_type,
-            'status'          => $request->status,
-            'notes'           => $request->notes ?: null,
-            'shipping_address'=> $request->shipping_address ?: null,
-            'shipping_cost'   => (float)($request->shipping_cost ?? 0),
-            'coupon_id'       => $request->filled('coupon_id') ? (int)$request->coupon_id : null,
-            'coupon_discount' => (float)($request->coupon_discount ?? 0),
-            'offer_id'        => $request->filled('offer_id') ? (int)$request->offer_id : null,
-            'offer_discount'  => (float)($request->offer_discount ?? 0),
-            'paid'            => (float)($request->paid ?? 0),
-        ];
-    }
-
-    private function syncItems(Order $order, array $items): void
-    {
-        $pricingMode = \App\Helpers\Helper::pricingMode();
-        foreach ($items as $item) {
-            $qty              = (float)$item['quantity'];
-            $price            = (float)$item['unit_price'];
-            $disc             = (float)($item['discount'] ?? 0);
-            $taxRate          = (float)($item['tax_rate'] ?? 0);
-            $unitConversionId = !empty($item['unit_conversion_id']) ? (int)$item['unit_conversion_id'] : null;
-
-            if ($pricingMode === 'inclusive') {
-                // السعر شامل الضريبة: الإجمالي = qty * price - disc (بدون إضافة ضريبة)
-                $rowTotal = round($qty * $price - $disc, 2);
-            } else {
-                // السعر غير شامل الضريبة: الإجمالي = (qty * price - disc) * (1 + taxRate/100)
-                $rowTotal = round(($qty * $price - $disc) * (1 + $taxRate / 100), 2);
-            }
-
-            OrderItem::create([
-                'order_id'           => $order->id,
-                'product_id'         => $item['product_id'],
-                'variant_id'         => $item['variant_id'] ?: null,
-                'unit_conversion_id' => $unitConversionId,
-                'quantity'           => $qty,
-                'unit_price'         => $price,
-                'unit_cost'          => (float)($item['unit_cost'] ?? 0),
-                'discount'           => $disc,
-                'tax_rate'           => $taxRate,
-                'total'              => $rowTotal,
+        if ($header['paid'] > (float)$header['total'] + 0.001) {
+            throw ValidationException::withMessages([
+                'paid' => 'المبلغ المدفوع (' . number_format($header['paid'], 2) . ') أكبر من إجمالي الطلب (' . number_format((float)$header['total'], 2) . ').',
             ]);
         }
-    }
 
-    private function recalcTotals(Order $order): void
-    {
-        $pricingMode = \App\Helpers\Helper::pricingMode();
-        $items       = $order->items()->get();
-        $discount    = $items->sum(fn($i) => (float)$i->discount);
+        $wasEffective  = (bool)$order?->is_effective;
+        $willEffective = in_array($header['status'], Order::$effectiveStatuses, true);
+        $oldCoupon     = $order?->coupon_id;
+        $oldOffer      = $order?->offer_id;
 
-        if ($pricingMode === 'inclusive') {
-            // السعر شامل الضريبة: استخراج الضريبة من السعر
-            // tax = gross * rate / (100 + rate)
-            $grossSum = $items->sum(fn($i) => (float)$i->quantity * (float)$i->unit_price - (float)$i->discount);
-            $tax      = $items->sum(fn($i) => round(
-                ((float)$i->quantity * (float)$i->unit_price - (float)$i->discount)
-                    * (float)$i->tax_rate / (100 + (float)$i->tax_rate),
-                2
-            ));
-            $subtotal = round($grossSum - $tax, 2);
+        $changed = ! $order || $this->fingerprint($order->fresh('items')) !== $this->fingerprint(null, $header, $priced['items']);
 
-            $order->update([
-                'subtotal'        => $subtotal,
-                'discount'        => round($discount, 2),
-                'tax'             => round($tax, 2),
-                'total'           => round($grossSum + (float)$order->shipping_cost - (float)$order->coupon_discount - (float)$order->offer_discount, 2),
-            ]);
+        if ($wasEffective && (! $willEffective || $changed)) {
+            $this->orderService->reverse($order);
+        }
+
+        if ($order) {
+            $order->update($header);
         } else {
-            // السعر غير شامل الضريبة: إضافة الضريبة فوق السعر
-            $subtotal = $items->sum(fn($i) => (float)$i->quantity * (float)$i->unit_price - (float)$i->discount);
-            $tax      = $items->sum(fn($i) => round(((float)$i->quantity * (float)$i->unit_price - (float)$i->discount) * (float)$i->tax_rate / 100, 2));
+            $order = Order::create($header);
+        }
 
-            $order->update([
-                'subtotal'        => round($subtotal, 2),
-                'discount'        => round($discount, 2),
-                'tax'             => round($tax, 2),
-                'total'           => round($subtotal + $tax + (float)$order->shipping_cost - (float)$order->coupon_discount - (float)$order->offer_discount, 2),
+        if ($changed) {
+            $order->items()->delete();
+            foreach ($priced['items'] as $line) {
+                OrderItem::create([
+                    'order_id'           => $order->id,
+                    'product_id'         => $line['product_id'],
+                    'variant_id'         => $line['variant_id'],
+                    'unit_conversion_id' => $line['unit_conversion_id'],
+                    'quantity'           => $line['quantity'],
+                    'unit_price'         => $line['unit_price'],
+                    'unit_cost'          => 0, // تُثبَّت من متوسط التكلفة عند التأكيد
+                    'discount'           => $line['discount'],
+                    'tax_rate'           => $line['tax_rate'],
+                    'total'              => $line['total'],
+                ]);
+            }
+        }
+
+        if ($willEffective && (! $wasEffective || $changed)) {
+            $this->orderService->apply($order->fresh());
+        }
+
+        $this->syncCouponUsage($order);
+        $this->recountUsage([$oldCoupon, $order->coupon_id], [$oldOffer, $order->offer_id]);
+
+        return $order;
+    }
+
+    /**
+     * إلغاء الطلب: عكس المخزون والمحفظة والقيود، وتحرير الكوبون والعرض
+     */
+    private function cancel(Order $order, ?string $notes = null): void
+    {
+        if ($order->is_effective) {
+            $this->orderService->reverse($order);
+        }
+
+        $order->update(['status' => 'cancelled', 'notes' => $notes ?: $order->notes]);
+        CouponUsage::where('order_id', $order->id)->delete();
+        $this->recountUsage([$order->coupon_id], [$order->offer_id]);
+    }
+
+    private function syncCouponUsage(Order $order): void
+    {
+        CouponUsage::where('order_id', $order->id)->delete();
+
+        if ($order->coupon_id && $order->customer_id && $order->status !== 'cancelled') {
+            CouponUsage::create([
+                'coupon_id'       => $order->coupon_id,
+                'customer_id'     => $order->customer_id,
+                'order_id'        => $order->id,
+                'discount_amount' => $order->coupon_discount,
+                'used_at'         => now(),
             ]);
         }
     }
 
-    /**
-     * Record / update offer used_count when an offer is applied to an order.
-     * Pass $previousOfferId when updating so the old offer's used_count is decremented.
-     */
-    private function recordOfferUsage(Order $order, ?int $previousOfferId): void
+    /** used_count = الاستخدامات الفعلية (بدل زيادة/إنقاص قد ينحرف) */
+    private function recountUsage(array $couponIds, array $offerIds): void
     {
-        // Decrement old offer if it changed
-        if ($previousOfferId && $previousOfferId !== $order->offer_id) {
-            Offer::where('id', $previousOfferId)->decrement('used_count');
+        foreach (array_unique(array_filter($couponIds)) as $id) {
+            Coupon::where('id', $id)->update(['used_count' => CouponUsage::where('coupon_id', $id)->count()]);
         }
-
-        if (!$order->offer_id) {
-            return;
-        }
-
-        // Only increment if it's a new offer being applied (not same offer on update)
-        if ($previousOfferId === null || $previousOfferId !== $order->offer_id) {
-            Offer::where('id', $order->offer_id)->increment('used_count');
+        foreach (array_unique(array_filter($offerIds)) as $id) {
+            $offer = Offer::find($id);
+            if ($offer) {
+                $offer->update(['used_count' => $this->pricing->offerUses($offer)]);
+            }
         }
     }
 
-    /**
-     * Apply offer discount to submitted items.
-     * Returns ['discount' => float, 'message' => string] or ['valid' => false, 'message' => string].
-     */
-    private function applyOfferDiscount(Offer $offer, array $items): array
+    /** بصمة البيانات المالية للطلب: إن لم تتغير لا يُعاد الترحيل عند تغيير الحالة فقط */
+    private function fingerprint(?Order $order, array $header = [], array $items = []): string
     {
-        // Subtotal from submitted items
-        $subtotal = collect($items)->sum(
-            fn($i) => (float)($i['quantity'] ?? 0) * (float)($i['unit_price'] ?? 0) - (float)($i['discount'] ?? 0)
-        );
-
-        if ($subtotal <= 0) {
-            return ['valid' => false, 'message' => 'لا يوجد مبلغ لتطبيق العرض عليه.'];
+        if ($order) {
+            $header = $order->only(['customer_id', 'warehouse_id', 'payment_type', 'bank_account_id', 'paid', 'total', 'shipping_cost', 'coupon_discount', 'offer_discount']);
+            $header['date'] = $order->date?->toDateString();
+            $items = $order->items->map(fn ($i) => $i->only(['product_id', 'variant_id', 'unit_conversion_id', 'quantity', 'unit_price', 'discount', 'tax_rate']))->all();
         }
 
-        // Resolve qualifying items based on applies_to
-        $qualifyingItems = $this->resolveQualifyingItems($offer, $items);
+        $n = fn ($v) => is_numeric($v) ? number_format((float)$v, 3, '.', '') : (string)$v;
+        $h = collect(['customer_id', 'warehouse_id', 'payment_type', 'bank_account_id', 'paid', 'total', 'shipping_cost', 'coupon_discount', 'offer_discount', 'date'])
+            ->map(fn ($k) => $n($k === 'date' ? substr((string)($header[$k] ?? ''), 0, 10) : ($header[$k] ?? '')))->implode('|');
+        $l = collect($items)->map(fn ($i) => collect(['product_id', 'variant_id', 'unit_conversion_id', 'quantity', 'unit_price', 'discount', 'tax_rate'])
+            ->map(fn ($k) => $n($i[$k] ?? ''))->implode(','))->implode(';');
 
-        $qualifyingSubtotal = collect($qualifyingItems)->sum(
-            fn($i) => (float)($i['quantity'] ?? 0) * (float)($i['unit_price'] ?? 0) - (float)($i['discount'] ?? 0)
-        );
-        $qualifyingQty = collect($qualifyingItems)->sum(fn($i) => (float)($i['quantity'] ?? 0));
+        return md5($h . '#' . $l);
+    }
 
-        $discount = 0;
-
-        switch ($offer->type) {
-            case 'percentage':
-                $discount = round($subtotal * (float)$offer->value / 100, 2);
-                break;
-
-            case 'fixed':
-                $discount = min((float)$offer->value, $subtotal);
-                break;
-
-            case 'buy_x_get_y':
-                if (empty($qualifyingItems)) {
-                    return ['valid' => false, 'message' => 'لا توجد منتجات مؤهلة لتطبيق هذا العرض.'];
-                }
-                $discount = $this->calcBuyXGetY($offer, $qualifyingItems);
-                if ($discount <= 0) {
-                    return ['valid' => false, 'message' => 'يجب شراء ' . (int)$offer->buy_quantity . ' قطعة على الأقل من المنتجات المؤهلة.'];
-                }
-                break;
-
-            case 'buy_x_get_discount':
-                if ($qualifyingQty < (int)$offer->buy_quantity) {
-                    return [
-                        'valid'   => false,
-                        'message' => 'يجب شراء ' . (int)$offer->buy_quantity . ' قطعة على الأقل من المنتجات المؤهلة.',
-                    ];
-                }
-                if ((float)$offer->discount_percentage > 0) {
-                    $discount = round($qualifyingSubtotal * (float)$offer->discount_percentage / 100, 2);
-                } else {
-                    $discount = min((float)$offer->discount_amount, $qualifyingSubtotal);
-                }
-                break;
-
-            case 'buy_amount_get_discount':
-                if ($subtotal < (float)$offer->min_amount) {
-                    return [
-                        'valid'   => false,
-                        'message' => 'يجب أن يكون إجمالي الطلب ' . number_format((float)$offer->min_amount, 2) . ' ر.س على الأقل.',
-                    ];
-                }
-                if ((float)$offer->discount_percentage > 0) {
-                    $discount = round($subtotal * (float)$offer->discount_percentage / 100, 2);
-                } else {
-                    $discount = min((float)$offer->discount_amount, $subtotal);
-                }
-                break;
-
-            case 'product_price_discount':
-                if (empty($qualifyingItems)) {
-                    return ['valid' => false, 'message' => 'لا توجد منتجات مؤهلة لتطبيق هذا العرض.'];
-                }
-                if ((float)$offer->discount_percentage > 0) {
-                    $discount = round($qualifyingSubtotal * (float)$offer->discount_percentage / 100, 2);
-                } else {
-                    $discount = min((float)$offer->discount_amount, $qualifyingSubtotal);
-                }
-                break;
-
-            case 'tiered':
-                $discount = $this->calcTieredDiscount($offer, $subtotal);
-                break;
-
-            case 'flash':
-            case 'bundle':
-            case 'first_order':
-                if ((float)$offer->discount_percentage > 0) {
-                    $discount = round($subtotal * (float)$offer->discount_percentage / 100, 2);
-                } elseif ((float)$offer->discount_amount > 0) {
-                    $discount = min((float)$offer->discount_amount, $subtotal);
-                } elseif ((float)$offer->value > 0) {
-                    $discount = min((float)$offer->value, $subtotal);
-                }
-                break;
-
-            case 'free_shipping':
-                // Returns zero order discount (shipping handled separately)
-                $discount = 0;
-                break;
+    /**
+     * أخطاء التحقق تعود للنموذج؛ أي خطأ آخر يلغي العملية كاملة برسالة واضحة (بدل 500 وطلب نصف محفوظ)
+     */
+    private function guard(\Closure $action)
+    {
+        try {
+            return $action();
+        } catch (ValidationException $e) {
+            return back()->withInput()->withErrors($e->errors());
+        } catch (\Throwable $e) {
+            report($e);
+            return back()->withInput()->with('error', 'تعذّر حفظ الطلب ولم يُطبَّق أي أثر: ' . $e->getMessage());
         }
+    }
 
-        $discount = max(0, min(round($discount, 2), $subtotal));
+    private function mapHeader(OrderRequest $request, ?Order $existing = null): array
+    {
+        $bankTypes = ['wallet', 'bank_online', 'bank_direct'];
 
         return [
-            'discount' => $discount,
-            'message'  => 'تم تطبيق العرض «' . $offer->name . '» — خصم ' . number_format($discount, 2) . ' ر.س',
+            // QA 6: رقم الطلب لا يتغير عند التعديل
+            'order_number'     => $existing?->order_number ?? ($request->order_number ?: Order::generateNumber()),
+            'customer_id'      => $request->customer_id,
+            'warehouse_id'     => $request->warehouse_id,
+            'date'             => $request->date,
+            'delivery_date'    => $request->delivery_date ?: null,
+            'payment_type'     => $request->payment_type,
+            'bank_account_id'  => in_array($request->payment_type, $bankTypes, true) && $request->filled('bank_account_id')
+                ? (int)$request->bank_account_id
+                : null,
+            'status'           => $request->status,
+            'notes'            => $request->notes ?: null,
+            'shipping_address' => $request->shipping_address ?: null,
+            'shipping_cost'    => (float)($request->shipping_cost ?? 0),
+            'coupon_id'        => $request->filled('coupon_id') ? (int)$request->coupon_id : null,
+            'offer_id'         => $request->filled('offer_id') ? (int)$request->offer_id : null,
+            'paid'             => (float)($request->paid ?? 0),
         ];
-    }
-
-    /**
-     * Filter submitted items to those qualifying for the offer.
-     */
-    private function resolveQualifyingItems(Offer $offer, array $items): array
-    {
-        if ($offer->applies_to === 'order') {
-            return $items;
-        }
-
-        $offerProductIds  = DB::table('offer_items')
-            ->where('offer_id', $offer->id)->where('item_type', 'product')
-            ->pluck('item_id')->toArray();
-
-        $offerCategoryIds = DB::table('offer_items')
-            ->where('offer_id', $offer->id)->where('item_type', 'category')
-            ->pluck('item_id')->toArray();
-
-        $qualifying = [];
-        foreach ($items as $item) {
-            $productId = (int)($item['product_id'] ?? 0);
-            if (!$productId) continue;
-
-            if ($offer->applies_to === 'product' && in_array($productId, $offerProductIds)) {
-                $qualifying[] = $item;
-            } elseif ($offer->applies_to === 'category' && !empty($offerCategoryIds)) {
-                $catId = Product::where('id', $productId)->value('category_id');
-                if ($catId && in_array($catId, $offerCategoryIds)) {
-                    $qualifying[] = $item;
-                }
-            }
-        }
-
-        return $qualifying;
-    }
-
-    /**
-     * Buy X get Y free: sort all qualifying units by price DESC.
-     * In each group of (buy_qty + get_qty), the cheapest get_qty units are free.
-     */
-    private function calcBuyXGetY(Offer $offer, array $qualifyingItems): float
-    {
-        $buyQty  = max(1, (int)$offer->buy_quantity);
-        $getQty  = max(1, (int)$offer->get_quantity);
-        $groupSz = $buyQty + $getQty;
-
-        // Expand into individual units (floor quantity to whole units)
-        $units = [];
-        foreach ($qualifyingItems as $item) {
-            $qty   = (int)floor((float)($item['quantity'] ?? 0));
-            $price = (float)($item['unit_price'] ?? 0);
-            for ($i = 0; $i < $qty; $i++) {
-                $units[] = $price;
-            }
-        }
-
-        if (count($units) < $buyQty) {
-            return 0;
-        }
-
-        // Sort DESC — most expensive first (cheapest in each group get freed)
-        rsort($units);
-
-        $discount = 0;
-        $total    = count($units);
-
-        for ($i = 0; $i < $total; $i++) {
-            // Within each group, positions >= buyQty are free
-            if (($i % $groupSz) >= $buyQty) {
-                $discount += $units[$i];
-            }
-        }
-
-        return round($discount, 2);
-    }
-
-    /**
-     * Tiered discount: pick the tier matching the subtotal and return percentage off.
-     * tier_thresholds format: [{"min": 500, "discount": 5}, {"min": 1000, "discount": 10}, ...]
-     */
-    private function calcTieredDiscount(Offer $offer, float $subtotal): float
-    {
-        $tiers = $offer->tier_thresholds ?? [];
-        if (empty($tiers)) {
-            return 0;
-        }
-
-        // Sort by min DESC to find the highest applicable tier
-        usort($tiers, fn($a, $b) => (float)($b['min'] ?? 0) <=> (float)($a['min'] ?? 0));
-
-        foreach ($tiers as $tier) {
-            $min = (float)($tier['min'] ?? 0);
-            if ($subtotal >= $min) {
-                $pct = (float)($tier['discount'] ?? $tier['percentage'] ?? 0);
-                return round($subtotal * $pct / 100, 2);
-            }
-        }
-
-        return 0;
     }
 }

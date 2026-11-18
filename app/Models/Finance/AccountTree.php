@@ -20,6 +20,7 @@ class AccountTree extends Model
         'total_credit',
         'balance',
         'is_active',
+        'is_cash',
     ];
 
     protected $casts = [
