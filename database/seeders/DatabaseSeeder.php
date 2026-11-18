@@ -35,7 +35,7 @@ class DatabaseSeeder extends Seeder
             PostingScenarioSeeder::class,
             PostingRuleSeeder::class,
             // FoodShopSeeder::class,
-            FabricShopSeeder::class,
+            // FabricShopSeeder::class,
         ]);
     }
 }

@@ -10,11 +10,11 @@ return new class extends Migration
     {
         Schema::create('posting_rules', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('scenario_id')->constrained('posting_scenarios')->cascadeOnDelete();
+            $table->foreignId('scenario_id')->constrained('posting_scenarios')->cascadeOnDelete(); 
             $table->integer('rule_group')->default(1)->comment('مجموعة القواعد (نفس الرقم يعني نفس القيد)');
             $table->foreignId('debit_account_id')->nullable()->constrained('account_trees')->nullOnDelete()->comment('الحساب المدين');
             $table->foreignId('credit_account_id')->nullable()->constrained('account_trees')->nullOnDelete()->comment('الحساب الدائن');
-            $table->enum('amount_type', ['fixed', 'subtotal', 'tax', 'total', 'quantity_cost', 'percentage', 'formula'])->default('fixed');
+            $table->enum('amount_type', ['fixed', 'subtotal', 'tax', 'total', 'quantity_cost', 'percentage', 'formula','field'])->default('fixed');
             $table->decimal('amount_value', 15, 2)->nullable()->comment('قيمة ثابتة أو نسبة');
             $table->string('amount_field', 100)->nullable()->comment('حقل من العملية (مثل total, subtotal, tax)');
             $table->text('formula')->nullable()->comment('معادلة حسابية معقدة');
