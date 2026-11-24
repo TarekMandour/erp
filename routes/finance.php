@@ -400,6 +400,7 @@ Route::group(['middleware' => ['admin']], function () {
         Route::post('/import', 'OrdersController@import')->name('import');
         Route::get('/template', 'OrdersController@exportTemplate')->name('template');
         Route::get('/ajax-customers', 'OrdersController@ajaxCustomers')->name('ajax.customers');
+        Route::get('/ajax-customer-balance', 'OrdersController@ajaxCustomerBalance')->name('ajax.customer_balance');
         Route::get('/ajax-products', 'OrdersController@ajaxProducts')->name('ajax.products');
         Route::get('/ajax-variants', 'OrdersController@ajaxVariants')->name('ajax.variants');
         Route::get('/ajax-stock', 'OrdersController@ajaxStock')->name('ajax.stock');

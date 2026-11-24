@@ -413,6 +413,22 @@
                         <td class="text-end fw-bolder text-success" id="summary-total">0.00 ر.س</td>
                     </tr>
                 </table>
+
+                {{-- رصيد العميل في المحفظة: يظهر بعد اختيار العميل (الموجب = على العميل، السالب = له) --}}
+                <table class="table table-bordered fs-6 fw-semibold d-none" id="customer-balance-box">
+                    <tr>
+                        <td class="text-gray-600 w-50">رصيد العميل السابق (المحفظة)</td>
+                        <td class="text-end" id="bal-previous">—</td>
+                    </tr>
+                    <tr>
+                        <td class="text-gray-600">رصيده بعد إجمالي الطلب</td>
+                        <td class="text-end" id="bal-after-total">—</td>
+                    </tr>
+                    <tr id="bal-after-paid-row" class="d-none">
+                        <td class="text-gray-600">رصيده بعد خصم المبلغ المدفوع</td>
+                        <td class="text-end" id="bal-after-paid">—</td>
+                    </tr>
+                </table>
             </div>
         </div>
     </div>

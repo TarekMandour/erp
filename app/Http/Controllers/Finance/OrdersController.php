@@ -10,6 +10,7 @@ use Rap2hpoutre\FastExcel\FastExcel;
 use App\Models\Finance\Order;
 use App\Models\Finance\OrderItem;
 use App\Models\Finance\Customer;
+use App\Models\Finance\CustomerWallet;
 use App\Models\Finance\Warehouse;
 use App\Models\Finance\Product;
 use App\Models\Finance\ProductVariant;
@@ -536,6 +537,24 @@ class OrdersController extends Controller
             'average_cost'  => (float)$product->average_cost ?: (float)$product->cost_price,
             'stock'         => $stock,
         ]);
+    }
+
+    // -------------------------------------------------------
+    // AJAX: رصيد العميل في المحفظة (مدين − دائن؛ الموجب = على العميل، السالب = له)
+    // عند تعديل طلب (order_id) تُستثنى حركات هذا الطلب نفسه ليكون الرصيد «قبله»
+    // -------------------------------------------------------
+    public function ajaxCustomerBalance(Request $request)
+    {
+        $customerId = (int) $request->customer_id;
+        if (! $customerId || ! Customer::whereKey($customerId)->exists()) {
+            return response()->json(['balance' => null]);
+        }
+
+        $balance = (float) CustomerWallet::where('customer_id', $customerId)
+            ->when($request->filled('order_id'), fn ($q) => $q->where(fn ($q2) => $q2->whereNull('order_id')->orWhere('order_id', '!=', (int) $request->order_id)))
+            ->sum(DB::raw('debit - credit'));
+
+        return response()->json(['balance' => round($balance, 2)]);
     }
 
     // -------------------------------------------------------

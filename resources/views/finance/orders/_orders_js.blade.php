@@ -5,6 +5,8 @@ $(function () {
        URLs
     -------------------------------------------------------- */
     var ajaxCustomersUrl = '{{ route("finance.orders.ajax.customers") }}';
+    var ajaxCustomerBalanceUrl = '{{ route("finance.orders.ajax.customer_balance") }}';
+    var balanceOrderId = {{ isset($data) ? (int) $data->id : 'null' }};
     var ajaxProductsUrl  = '{{ route("finance.orders.ajax.products") }}';
     var ajaxVariantsUrl  = '{{ route("finance.orders.ajax.variants") }}';
     var ajaxStockUrl     = '{{ route("finance.orders.ajax.stock") }}';
@@ -515,7 +517,53 @@ $(function () {
         }
         var total = Math.max(0, round2(subtotal + totalTax + shipping - couponDisc - offerDisc));
         $('#summary-total').text(total.toFixed(2) + ' ر.س');
+        renderCustomerBalance(total);
     }
+
+    /* --------------------------------------------------------
+       رصيد العميل في المحفظة (الموجب = على العميل، السالب = له)
+       السابق من الخادم، وبعد الإجمالي = السابق + الإجمالي، وبعد المدفوع = ناقص المدفوع
+    -------------------------------------------------------- */
+    var customerBalance = null;
+
+    function fmtBalance(n) {
+        var label = n > 0.004 ? ' (عليه)' : (n < -0.004 ? ' (له)' : '');
+        var cls   = n > 0.004 ? 'text-danger' : (n < -0.004 ? 'text-success' : '');
+        return '<span class="' + cls + '">' + Math.abs(n).toFixed(2) + ' ر.س' + label + '</span>';
+    }
+
+    function renderCustomerBalance(total) {
+        if (customerBalance === null || !getCustomerId()) {
+            $('#customer-balance-box').addClass('d-none');
+            return;
+        }
+        if (typeof total === 'undefined') total = parseFloat($('#summary-total').text()) || 0;
+        var paid = parseFloat($('#paid_input').val()) || 0;
+
+        $('#bal-previous').html(fmtBalance(customerBalance));
+        $('#bal-after-total').html(fmtBalance(round2(customerBalance + total)));
+        if (paid > 0) {
+            $('#bal-after-paid').html(fmtBalance(round2(customerBalance + total - paid)));
+            $('#bal-after-paid-row').removeClass('d-none');
+        } else {
+            $('#bal-after-paid-row').addClass('d-none');
+        }
+        $('#customer-balance-box').removeClass('d-none');
+    }
+
+    function loadCustomerBalance() {
+        var cid = getCustomerId();
+        if (!cid) { customerBalance = null; renderCustomerBalance(); return; }
+        $.get(ajaxCustomerBalanceUrl, { customer_id: cid, order_id: balanceOrderId }, function (res) {
+            // تجاهل ردّ عميل سابق إن تغيّر الاختيار أثناء الطلب
+            if (getCustomerId() !== cid) return;
+            customerBalance = (res && res.balance !== null && typeof res.balance !== 'undefined') ? parseFloat(res.balance) : null;
+            renderCustomerBalance();
+        });
+    }
+
+    $('#customer_select').on('change', loadCustomerBalance);
+    $('#paid_input').on('input change', function () { renderCustomerBalance(); });
 
     function updateGlobalStockWarning() {
         if ($('.item-qty.is-invalid').length) {
@@ -545,7 +593,7 @@ $(function () {
 
     $('#fill_paid_btn').on('click', function () {
         var total = parseFloat($('#summary-total').text()) || 0;
-        $('#paid_input').val(total.toFixed(2));
+        $('#paid_input').val(total.toFixed(2)).trigger('input');
     });
 
     /* =========================================================
@@ -736,6 +784,7 @@ $(function () {
     $(document).on('input change', '.item-qty, .item-price, .item-disc, .item-tax, .item-unit, .item-variant', refreshDiscounts);
     $('#shipping_cost, input[name="date"]').on('input change', refreshDiscounts);
     $('#customer_select').on('change', refreshDiscounts);
+    if (getCustomerId()) loadCustomerBalance(); // تعديل طلب / عودة بعد خطأ تحقق: العميل مختار مسبقاً
 
     // ── الحساب البنكي: للمحفظة والتحويل البنكي فقط ──
     function toggleBankAccount() {
