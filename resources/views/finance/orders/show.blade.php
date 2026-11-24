@@ -118,6 +118,12 @@
             <i class="ki-duotone ki-printer fs-3 me-1"><span class="path1"></span><span class="path2"></span><span class="path3"></span></i>
             طباعة
         </button>
+        @if($data->is_effective)
+        <a href="{{route('finance.sales_returns.create', ['order_id' => $data->id])}}" class="btn btn-light-warning fw-bold">
+            <i class="ki-duotone ki-arrow-circle-left fs-3 me-1"><span class="path1"></span><span class="path2"></span></i>
+            مرتجع جديد
+        </a>
+        @endif
         @if(!$data->is_locked)
         <a href="{{route($route.'.edit', $data->id)}}" class="btn btn-light-primary fw-bold">
             <i class="ki-duotone ki-pencil fs-3 me-1"><span class="path1"></span><span class="path2"></span></i>
@@ -369,6 +375,31 @@
             </table>
         </div>
     </div>
+
+    {{-- ── Returns (مستندات مستقلة مرتبطة بالطلب) ─────────────── --}}
+    @if($data->returns->isNotEmpty())
+    <div class="mb-8 no-print">
+        <h4 class="fw-bold text-gray-800 mb-4">مرتجعات هذا الطلب</h4>
+        <table class="table table-bordered align-middle fs-6">
+            <thead class="bg-light-dark">
+                <tr class="fw-bold text-gray-800 text-center">
+                    <th>رقم المرتجع</th><th>التاريخ</th><th>الإجمالي</th><th>المردود</th><th>الحالة</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach($data->returns as $ret)
+                <tr class="text-center">
+                    <td><a href="{{route('finance.sales_returns.show', $ret->id)}}" class="fw-bold">{{$ret->return_number}}</a></td>
+                    <td>{{$ret->date?->format('Y-m-d')}}</td>
+                    <td>{{number_format((float)$ret->total, 2)}} ر.س</td>
+                    <td>{{number_format((float)$ret->paid, 2)}} ر.س</td>
+                    <td><span class="badge {{$ret->status_badge}}">{{$ret->status_label}}</span></td>
+                </tr>
+                @endforeach
+            </tbody>
+        </table>
+    </div>
+    @endif
 
     {{-- ── Notes ─────────────────────────────────────────────── --}}
     @if($data->notes)

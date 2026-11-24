@@ -40,6 +40,7 @@ class OrdersController extends Controller
     {
         if ($request->ajax()) {
             $query = Order::with(['customer:id,name,customer_code', 'warehouse:id,name'])
+                ->withCount(['returns as confirmed_returns_count' => fn ($q) => $q->where('status', 'confirmed')])
                 ->select('orders.*');
 
             if ($request->filled('fcustomer')) {
@@ -128,6 +129,7 @@ class OrdersController extends Controller
             'warehouse:id,name',
             'items.product:id,name,sku',
             'items.variant:id,product_id,sku,attributes',
+            'returns' => fn ($q) => $q->orderByDesc('id'),
         ])->findOrFail($id);
 
         $settings    = \App\Helpers\Helper::settings();
@@ -145,7 +147,9 @@ class OrdersController extends Controller
 
         if ($data->is_locked) {
             return redirect()->route($this->route . '.show', $id)
-                ->with('warning', 'لا يمكن تعديل هذا الطلب — الحالة: ' . $data->status_label);
+                ->with('warning', $data->has_confirmed_returns
+                    ? 'لا يمكن تعديل هذا الطلب — له مرتجع مؤكد. ألغِ المرتجع أولاً.'
+                    : 'لا يمكن تعديل هذا الطلب — الحالة: ' . $data->status_label);
         }
 
         $warehouses = Warehouse::where('is_active', true)->select('id', 'name')->orderBy('name')->get();
@@ -161,7 +165,9 @@ class OrdersController extends Controller
         $order = Order::with('items')->findOrFail($request->id);
 
         if ($order->is_locked) {
-            return back()->withErrors(['items' => 'لا يمكن تعديل طلب بهذه الحالة.']);
+            return back()->withErrors(['items' => $order->has_confirmed_returns
+                ? 'لا يمكن تعديل أو إلغاء هذا الطلب — له مرتجع مؤكد. ألغِ المرتجع أولاً.'
+                : 'لا يمكن تعديل طلب بهذه الحالة.']);
         }
 
         return $this->guard(function () use ($request, $order) {
@@ -188,7 +194,9 @@ class OrdersController extends Controller
         $order = Order::with('items')->findOrFail($request->id);
 
         if ($order->is_locked) {
-            return back()->with('error', 'لا يمكن حذف طلب بهذه الحالة.');
+            return back()->with('error', $order->has_confirmed_returns
+                ? 'لا يمكن حذف هذا الطلب — له مرتجع مؤكد. ألغِ المرتجع أولاً.'
+                : 'لا يمكن حذف طلب بهذه الحالة.');
         }
 
         return $this->guard(function () use ($order) {

@@ -44,7 +44,7 @@ $(function () {
     // ── Amount-field map per operation type ──────────────────────────────────
     var AMOUNT_FIELD_MAP = {
         sales:               [{v:'subtotal',l:'المجموع الفرعي'},{v:'discount',l:'الخصم'},{v:'tax',l:'الضريبة'},{v:'shipping_cost',l:'تكلفة الشحن'},{v:'total',l:'الإجمالي'},{v:'paid',l:'المدفوع'}],
-        sales_return:        [{v:'subtotal',l:'المجموع الفرعي'},{v:'discount',l:'الخصم'},{v:'tax',l:'الضريبة'},{v:'shipping_cost',l:'تكلفة الشحن'},{v:'total',l:'الإجمالي'},{v:'paid',l:'المدفوع'}],
+        sales_return:        [{v:'subtotal',l:'المجموع الفرعي'},{v:'discount',l:'الخصم'},{v:'coupon_discount',l:'خصم الكوبون'},{v:'offer_discount',l:'خصم العرض'},{v:'tax',l:'الضريبة'},{v:'shipping_cost',l:'تكلفة الشحن'},{v:'total',l:'الإجمالي'},{v:'paid',l:'المدفوع'}],
         sales_discount:      [{v:'subtotal',l:'المجموع الفرعي'},{v:'discount',l:'الخصم'},{v:'tax',l:'الضريبة'},{v:'shipping_cost',l:'تكلفة الشحن'},{v:'total',l:'الإجمالي'},{v:'paid',l:'المدفوع'}],
         sales_installment:   [{v:'subtotal',l:'المجموع الفرعي'},{v:'discount',l:'الخصم'},{v:'tax',l:'الضريبة'},{v:'shipping_cost',l:'تكلفة الشحن'},{v:'total',l:'الإجمالي'},{v:'paid',l:'المدفوع'}],
         purchase:            [{v:'subtotal',l:'المجموع الفرعي'},{v:'discount',l:'الخصم'},{v:'tax',l:'الضريبة'},{v:'total',l:'الإجمالي'},{v:'paid',l:'المدفوع'}],

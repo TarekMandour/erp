@@ -73,6 +73,18 @@
 
                 <div class="menu-item">
                     <!--begin:Menu link-->
+                    <a class="menu-link {{ request()->routeIs('finance.sales_returns.*') ? 'active' : '' }}" href="{{route('finance.sales_returns.index')}}">
+                        <span class="menu-icon">
+                            <i class="bi bi-arrow-return-left"></i>
+                        </span>
+                        <span class="menu-title">مرتجعات المبيعات</span>
+                        <span class="menu-arrow"></span>
+                    </a>
+                    <!--end:Menu link-->
+                </div>
+
+                <div class="menu-item">
+                    <!--begin:Menu link-->
                     <a class="menu-link {{ request()->routeIs('finance.offers.*') ? 'active' : '' }}" href="{{route('finance.offers.index')}}">
                         <span class="menu-icon">
                             <i class="bi bi-tags-fill"></i>

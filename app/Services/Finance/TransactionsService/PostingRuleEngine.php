@@ -8,6 +8,7 @@ use App\Models\Finance\PostingRule;
 use App\Models\Finance\Voucher;
 use App\Models\Finance\Purchase;
 use App\Models\Finance\Order;
+use App\Models\Finance\SalesReturn;
 use App\Models\Finance\BankAccount;
 use App\Models\Finance\Treasury;
 use Illuminate\Database\Eloquent\Model;
@@ -199,6 +200,23 @@ class PostingRuleEngine
             $sourceModel instanceof Order
             && $sourceModel->bank_account_id
             && $rule->debit_account_id
+            && $rule->amount_field === 'paid'
+        ) {
+            $bankTreeId = BankAccount::whereKey($sourceModel->bank_account_id)->value('account_tree_id');
+
+            if ($bankTreeId) {
+                return (int) $bankTreeId;
+            }
+        }
+
+        /*
+         * مرتجع مبيعات بنوع دفع بنكي/محفظة مع حساب بنكي: المبلغ المردود (paid) الدائن
+         * يُرحَّل على حساب الشجرة المرتبط بالحساب البنكي ليظهر في سجل حركات البنك.
+         */
+        if (
+            $sourceModel instanceof SalesReturn
+            && $sourceModel->bank_account_id
+            && $rule->credit_account_id
             && $rule->amount_field === 'paid'
         ) {
             $bankTreeId = BankAccount::whereKey($sourceModel->bank_account_id)->value('account_tree_id');

@@ -13,6 +13,7 @@ class CustomerWallet extends Model
         'customer_id',
         'voucher_id',
         'order_id',
+        'sales_return_id',
         'date',
         'description',
         'debit',

@@ -107,7 +107,22 @@ class Order extends Model
 
     public function getIsLockedAttribute(): bool
     {
-        return in_array($this->status, static::$lockedStatuses);
+        return in_array($this->status, static::$lockedStatuses) || $this->has_confirmed_returns;
+    }
+
+    public function returns()
+    {
+        return $this->hasMany(SalesReturn::class);
+    }
+
+    /** للطلب مرتجع مؤكد: يُمنع تعديله وإلغاؤه وحذفه (المرتجع مستند مستقل مبني على أرقامه) */
+    public function getHasConfirmedReturnsAttribute(): bool
+    {
+        if (array_key_exists('confirmed_returns_count', $this->attributes)) {
+            return (int) $this->attributes['confirmed_returns_count'] > 0;
+        }
+
+        return $this->exists && $this->returns()->where('status', 'confirmed')->exists();
     }
 
     public function coupon()

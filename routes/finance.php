@@ -410,6 +410,15 @@ Route::group(['middleware' => ['admin']], function () {
         Route::get('/ajax-apply-offer', 'OrdersController@ajaxApplyOffer')->name('ajax.apply_offer');
     });
 
+    Route::name('sales_returns.')->prefix('sales-returns')->group(function () {
+        Route::get('/', 'SalesReturnsController@index')->name('index');
+        Route::get('/create', 'SalesReturnsController@create')->name('create');
+        Route::post('/preview', 'SalesReturnsController@preview')->name('preview');
+        Route::post('/store', 'SalesReturnsController@store')->name('store');
+        Route::get('/show/{id}', 'SalesReturnsController@show')->name('show');
+        Route::post('/cancel', 'SalesReturnsController@cancel')->name('cancel');
+    });
+
 });
 
     
