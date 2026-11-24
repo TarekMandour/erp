@@ -280,12 +280,21 @@
                             $data->items->map(fn ($it) => round((float)$it->quantity * (float)$it->unit_price - (float)$it->discount, 2))->all(),
                             (float)$data->coupon_discount + (float)$data->offer_discount - $shipOffer
                         );
+                        // تسمية خصم الفاتورة الموزَّع على البنود (الكوبون و/أو العرض؛ خصم الشحن المجاني لا يوزَّع)
+                        $hasCouponDisc = (float)$data->coupon_discount > 0;
+                        $hasOfferDisc  = ((float)$data->offer_discount - $shipOffer) > 0;
+                        $invLabel = $hasCouponDisc && $hasOfferDisc ? 'كوبون + عرض' : ($hasOfferDisc ? 'خصم العرض' : 'خصم الكوبون');
                     @endphp
                     @foreach($data->items as $i => $item)
                     @php
                         $qty      = (float)$item->quantity;
                         $price    = (float)$item->unit_price;
                         $disc     = (float)$item->discount + ($invAlloc[$i] ?? 0);
+                        // الخصم نسبتان: خصم المنتج (من التسعير) على قيمة البند، وخصم الفاتورة على صافيه بعد خصم المنتج
+                        $grossBefore = $qty * $price;
+                        $prodPct     = $grossBefore > 0 ? round((float)$item->discount / $grossBefore * 100, 2) : 0;
+                        $netAfterProd = $grossBefore - (float)$item->discount;
+                        $invPct      = $netAfterProd > 0 ? round(($invAlloc[$i] ?? 0) / $netAfterProd * 100, 2) : 0;
                         $taxRate  = (float)$item->tax_rate;
                         $gross    = round($qty * $price - $disc, 2);
                         $taxAmt   = \App\Services\Finance\OrderPricingService::lineTax($gross, $taxRate, $pricingMode === 'inclusive');
@@ -311,7 +320,11 @@
                         <td class="text-center">{{number_format($price, 2)}}</td>
                         <td class="text-center no-print">{{number_format((float)$item->unit_cost, 4)}}</td>
                         <td class="text-center text-gray-600">{{number_format($unitPriceBefore, 2)}}</td>
-                        <td class="text-center text-danger">{{number_format($disc, 2)}}</td>
+                        <td class="text-center text-danger fs-7">
+                            @if($prodPct > 0)<div>خصم المنتج: {{number_format($prodPct, 2)}}%</div>@endif
+                            @if($invPct > 0)<div>{{$invLabel}}: {{number_format($invPct, 2)}}%</div>@endif
+                            @if($prodPct <= 0 && $invPct <= 0)<span class="text-gray-500">—</span>@endif
+                        </td>
                         <td class="text-center">{{number_format($taxRate, 2)}}%</td>
                         <td class="text-center text-warning">{{number_format($taxAmt, 2)}}</td>
                         <td class="text-center fw-bold text-success">{{number_format($rowTot, 2)}} ر.س</td>
