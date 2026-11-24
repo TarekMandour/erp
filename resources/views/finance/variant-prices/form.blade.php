@@ -55,23 +55,56 @@
             id="price" value="{{old('price', $data->price ?? '')}}" placeholder="0.00" />
         @error('price')<div class="text-danger mt-1">{{$message}}</div>@enderror
     </div>
+    <div class="col-md-2 fv-row">
+        <label class="form-label">نسبة التخفيض %</label>
+        <input type="number" step="0.01" min="0" max="100" class="form-control form-control-solid" id="discount_pct" placeholder="0" />
+    </div>
     <div class="col-md-3 fv-row">
         <label class="form-label">سعر التخفيض</label>
-        <input type="number" step="0.01" min="0" class="form-control form-control-solid" name="sale_price"
+        <input type="number" step="0.01" min="0" class="form-control form-control-solid" name="sale_price" id="sale_price"
             value="{{old('sale_price', $data->sale_price ?? '')}}" placeholder="اتركه فارغاً إن لم يكن هناك تخفيض" />
         @error('sale_price')<div class="text-danger mt-1">{{$message}}</div>@enderror
     </div>
-    <div class="col-md-3 fv-row">
+    <div class="col-md-2 fv-row">
         <label class="form-label">بداية التخفيض</label>
         <input type="date" class="form-control form-control-solid" name="sale_start"
             value="{{old('sale_start', isset($data) && $data->sale_start ? $data->sale_start->format('Y-m-d') : '')}}" />
     </div>
-    <div class="col-md-3 fv-row">
+    <div class="col-md-2 fv-row">
         <label class="form-label">نهاية التخفيض</label>
         <input type="date" class="form-control form-control-solid" name="sale_end"
             value="{{old('sale_end', isset($data) && $data->sale_end ? $data->sale_end->format('Y-m-d') : '')}}" />
     </div>
 </div>
+<script>
+(function () {
+    var price = document.getElementById('price'),
+        pct   = document.getElementById('discount_pct'),
+        sale  = document.getElementById('sale_price');
+    if (!price || !pct || !sale) return;
+    var r2 = function (n) { return (Math.round(n * 100) / 100).toString(); };
+
+    // النسبة -> سعر التخفيض
+    pct.addEventListener('input', function () {
+        var p = parseFloat(price.value), d = parseFloat(pct.value);
+        if (isNaN(d) || pct.value === '') { sale.value = ''; return; }
+        if (!isNaN(p)) sale.value = (p * (1 - d / 100)).toFixed(2);
+    });
+    // سعر التخفيض -> النسبة
+    sale.addEventListener('input', function () {
+        var p = parseFloat(price.value), s = parseFloat(sale.value);
+        if (isNaN(s) || sale.value === '') { pct.value = ''; return; }
+        if (!isNaN(p) && p > 0) pct.value = r2((1 - s / p) * 100);
+    });
+    // تغيير السعر الأساسي: أعد حساب سعر التخفيض من النسبة إن وُجدت
+    price.addEventListener('input', function () {
+        if (pct.value !== '') pct.dispatchEvent(new Event('input'));
+        else if (sale.value !== '') sale.dispatchEvent(new Event('input'));
+    });
+    // عند فتح صفحة التعديل: احسب النسبة من القيم المحفوظة
+    if (sale.value !== '') sale.dispatchEvent(new Event('input'));
+})();
+</script>
 
 {{-- Row 3: Customer + Valid Dates --}}
 <div class="row mb-7">
